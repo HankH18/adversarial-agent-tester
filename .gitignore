@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets / local config — NEVER commit
+.env
+.env.local
+*.key
+secrets/
+
+# Platform runtime data (regenerated; large)
+*.sqlite
+*.sqlite-journal
+*.db
+runs/*.jsonl
+artifacts/live/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
