@@ -32,6 +32,14 @@ class CampaignResult:
     exploits_new: int
     directive_rationale: str
     mutations_run: int = 0
+    halted_no_signal: bool = False
+
+
+def should_halt_no_signal(spent_usd: float, budget_usd: float, confirmed: int) -> bool:
+    """Cost governor: halt a campaign that is burning budget without producing
+    signal. True iff a positive budget is set, spend has reached it, and not one
+    exploit has been confirmed. Disabled when budget <= 0."""
+    return budget_usd > 0 and spent_usd >= budget_usd and confirmed == 0
 
 
 def build_mutator(settings: Settings):
@@ -107,6 +115,7 @@ async def run_campaign(
         by_outcome: dict[str, int] = {}
         successes = 0
         mutations_run = 0
+        halted = False
         exploits_before = _count_exploits(store)
         for seed in runnable:
             _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
@@ -118,6 +127,16 @@ async def run_campaign(
                 successes += 1
             elif verdict.outcome == Outcome.partial and mutator is not None:
                 mutations_run += 1
+
+            # Cost governor: stop burning budget once it produces no signal.
+            spent = store.cost_summary(run_id)["usd"]
+            confirmed = _count_exploits(store) - exploits_before
+            if should_halt_no_signal(spent, settings.nosignal_halt_usd, confirmed):
+                store.log_event(run_id, "orchestrator", "cost_halt",
+                                f"no-signal halt: ${spent:.4f} >= budget "
+                                f"${settings.nosignal_halt_usd:.2f}, 0 confirmed exploits")
+                halted = True
+                break
 
         cost = store.cost_summary(run_id)["usd"]
         store.end_run(run_id, cost)
@@ -133,6 +152,7 @@ async def run_campaign(
         exploits_new=exploits_new,
         directive_rationale=rationale,
         mutations_run=mutations_run,
+        halted_no_signal=halted,
     )
 
 

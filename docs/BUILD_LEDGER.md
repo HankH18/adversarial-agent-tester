@@ -37,7 +37,7 @@
 | G6 | `USERS.md` | Submission | ✅ 4 personas + why-automation |
 | G7 | README: setup, arch overview, deployed link, run instructions | Submission | ✅ |
 | G8 | ≥3 distinct professional vulnerability reports | Submission | ✅ 3 generated (reproducible, invariant-specific) |
-| G9 | AI Cost Analysis (100/1K/10K/100K runs) | Submission | 🟡 pricing built; COST_ANALYSIS.md TODO (Cycle 2) |
+| G9 | AI Cost Analysis (100/1K/10K/100K runs) | Submission | ✅ COST_ANALYSIS.md (grounded in pricing.py; non-linear scale model) |
 | G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ✅ 8 schemas, 29 tests, byte-deterministic |
 | G11 | OWASP Top-10 + LLM-Top-10 mapping on each eval case | Eng req | ✅ every seed mapped |
 | G12 | Regression harness: versioned store, replay, reappearance detect | Platform req | ✅ fixed + fail-closed; `regress` runs live |
@@ -70,6 +70,25 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 | Cost analysis | `docs/COST_ANALYSIS.md` | ⬜ | G9 |
 
 ## Cycle log
+### Cycle 3 — cost analysis, perf baseline, as-built reconciliation (3 builders) ✅ DONE
+- Workflow `wf_fcf53241`: COST_ANALYSIS.md (G9), a load/baseline perf harness + PERFORMANCE_BASELINE.md,
+  and AS_BUILT.md — each pipelined into an audit + integration critic. 7 agents, 0 errors.
+- **perf-baseline: full PASS** — real numbers: 100 attacks / 55.4s / 1.8 per sec against the live target,
+  throttled-network bottleneck identified, peak 9 MB traced / 68 MB RSS; **baseline DB verified
+  byte-for-byte untouched** (perf run isolated to a temp dir). Also wrote `docs/DEMO_SCRIPT.md` (lead).
+- **Audit caught 2 honesty defects → fixed the RIGHT way:**
+  - COST_ANALYSIS §5 claimed the no-signal cost halt was enforced, but it wasn't wired. **Fixed by
+    actually wiring it**: `should_halt_no_signal()` (pure, tested) called per-seed in `run_campaign`;
+    halts + logs `cost_halt` + returns `halted_no_signal` when budget is spent with zero signal. This
+    satisfies the case-study "halt when cost accrues without producing signal" requirement. Updated
+    COST_ANALYSIS §5 + AS_BUILT (Cost Governor now ✅) to match. +4 tests (82 total).
+  - AS_BUILT "verify" block used the console script, which was broken in the over-installed venv →
+    switched the doc to the cwd-robust `python -m adversaryforge.cli` form.
+- **Editable-install root cause (final):** hatchling's `.pth` lacks a trailing newline AND repeated/
+  concurrent `uv` installs leave conflicting `.pth` files → `site` stops adding repo-root to sys.path.
+  A single clean `uv pip install -e '.[dev]'` works (verified: REPO on path=True, console OK). README
+  notes the `-m` fallback. **Rule stands: no concurrent/repeat installs.**
+
 ### Cycle 2 — wire the mutation loop (lead) ✅ DONE
 - Wired the **mutation loop** into the Orchestrator/campaign: a `partial` verdict on a message-bearing
   seed now autonomously generates N variants (the Mutator; deterministic keyless fallback), executes

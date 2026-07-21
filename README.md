@@ -54,6 +54,7 @@ cp .env.example .env      # then edit — see "Authentication & keys" below
 
 # 3. Run an adversarial campaign against the live target
 .venv/bin/adversaryforge campaign
+#    (equivalent, cwd-robust: .venv/bin/python -m adversaryforge.cli campaign)
 
 # 4. Read the observability snapshot the Orchestrator reads
 .venv/bin/adversaryforge status

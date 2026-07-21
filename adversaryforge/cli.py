@@ -46,6 +46,8 @@ def campaign(
     console.print(f"  [bold]successes: {result.successes}[/bold]  "
                   f"new confirmed exploits: {result.exploits_new}  "
                   f"partials mutated: {result.mutations_run}")
+    if result.halted_no_signal:
+        console.print("  [yellow]⚠ cost governor halted the campaign (budget spent, no signal)[/yellow]")
 
 
 @app.command()
