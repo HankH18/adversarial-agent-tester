@@ -16,7 +16,8 @@
 The Clinical Co-Pilot is a defensively mature target. Two prior adversarial passes have already closed
 the low-hanging correctness bugs, and its core PHI-integrity story is genuinely strong: a **fail-closed
 serve-time verifier** re-fetches every cited FHIR resource live and withholds the entire turn if
-nothing survives (`agent/copilot/chat/service.py:68`), a **no-invention OCR gate** refuses to cite any
+nothing survives (`agent/copilot/verification/serve.py`; the withhold sentinel is `chat/service.py:68`),
+a **no-invention OCR gate** refuses to cite any
 document value it cannot locate in the page tokens, and **write-back** is gated off by default and
 bound to a server-persisted proposal. The interesting attack surface is therefore not "can I make it
 return a wrong lab value" — that path is hard — but **behavioral, multi-turn, and indirect**: the seams
@@ -80,7 +81,7 @@ something," not "the target moved."
   fabricated or unverifiable clinical narrative even when the structured claims are withheld — a patient-
   safety risk (wrong dose, wrong allergy) that bypasses the citation guarantee.
 - **Difficulty:** **Hard** for the structured path — the fail-closed verifier drops any claim whose FHIR
-  citation does not re-materialize live (`chat/service.py:68`), and the critic rejects uncited claim
+  citation does not re-materialize live (`agent/copilot/verification/serve.py`), and the critic rejects uncited claim
   chips deterministically. **Moderate** for the prose path — the critic does **not** hard-screen the
   free-text answer body (`graph/critic.py:22-30`), protected only by a whole-turn withhold, not a
   sentence-level screen (admitted limitation #2, "Week-3 scope").
