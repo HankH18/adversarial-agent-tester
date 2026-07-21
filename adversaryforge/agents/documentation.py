@@ -439,8 +439,10 @@ def render_markdown(report: VulnReport) -> str:
         "## Reproduction",
         "",
     ]
+    # Bold-numbered paragraphs (not a `1.` ordered list): a step may contain a
+    # fenced code block, which breaks out of an ordered list in strict CommonMark.
     for i, step in enumerate(report.reproduction, start=1):
-        lines.append(f"{i}. {step}")
+        lines.append(f"**{i}.** {step}")
         lines.append("")
 
     lines += [
