@@ -44,7 +44,8 @@ def campaign(
     console.print(f"  directive: [dim]{result.directive_rationale}[/dim]")
     console.print(f"  attempts: {result.total}  outcomes: {result.by_outcome}")
     console.print(f"  [bold]successes: {result.successes}[/bold]  "
-                  f"new confirmed exploits: {result.exploits_new}")
+                  f"new confirmed exploits: {result.exploits_new}  "
+                  f"partials mutated: {result.mutations_run}")
 
 
 @app.command()

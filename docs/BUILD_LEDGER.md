@@ -70,6 +70,19 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 | Cost analysis | `docs/COST_ANALYSIS.md` | ⬜ | G9 |
 
 ## Cycle log
+### Cycle 2 — wire the mutation loop (lead) ✅ DONE
+- Wired the **mutation loop** into the Orchestrator/campaign: a `partial` verdict on a message-bearing
+  seed now autonomously generates N variants (the Mutator; deterministic keyless fallback), executes
+  each as a child attempt (generation+1, parent linked), re-judges, and promotes any breakthrough —
+  the case study's "take a partial → generate 10 variants" behavior. `mutation_breakthrough` events
+  land on the timeline. +2 offline tests (78 total pass). CLI shows `partials mutated`.
+- **Editable-install root cause found & fixed:** the `adversaryforge` console script kept breaking
+  because concurrent `uv pip install` during the Cycle-1 fan-out created a duplicate
+  `_editable_impl_adversaryforge 2.pth` that broke the finder. A single clean
+  `uv pip install -e '.[dev]'` works (verified console script + `-m`). **Rule for future cycles:
+  builders must NOT run installs** — the editable package already picks up new files.
+- Verified live: campaign (3 findings, mutation loop active), regress, report all run via console script.
+
 ### Cycle 1 — parallel fan-out + audit swarm (7 builders) ✅ DONE
 - Workflow `wf_91df4b1a`: 7 builders (disjoint paths) → per-component adversarial 4-lens audit →
   integration critic. 15 agents, 0 errors, ~1.1M tokens.

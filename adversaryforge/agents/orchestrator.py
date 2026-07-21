@@ -102,11 +102,11 @@ class Orchestrator:
     # ── campaign execution ──────────────────────────────────────────────────
     async def run_seed(
         self, seed: Seed, directive: CampaignDirective, executor: SeedExecutor,
-        judge: Judge, run_id: str,
+        judge: Judge, run_id: str, mutator=None, n_variants: int = 8,
     ) -> tuple[AttackAttempt, Verdict]:
         attempt = await executor.run(seed, directive.directive_id)
         self._store.record_attempt(run_id, attempt)
-        self._store.log_event(run_id, "redteam", "attempt", f"{seed.id} ({seed.category if isinstance(seed.category,str) else seed.category.value})")
+        self._store.log_event(run_id, "redteam", "attempt", f"{seed.id} ({_enum(seed.category)})")
 
         verdict = judge.evaluate_attempt(attempt)  # info barrier applied inside
         self._store.record_verdict(run_id, verdict)
@@ -115,7 +115,52 @@ class Orchestrator:
 
         if verdict.outcome == Outcome.success:
             self._promote(seed, attempt, verdict, run_id)
+        elif verdict.outcome == Outcome.partial and mutator is not None:
+            # A partial is a foothold: autonomously generate N variants to probe for
+            # a version that breaks through (the case study's core Red Team behavior).
+            await self._mutate_and_run(seed, attempt, verdict, directive, executor,
+                                       judge, run_id, mutator, n_variants)
         return attempt, verdict
+
+    async def _mutate_and_run(self, seed, parent, verdict, directive, executor,
+                              judge, run_id, mutator, n) -> None:
+        base_messages = self._seed_messages(seed)
+        if not base_messages:
+            return  # nothing message-bearing to mutate (e.g. pure HTTP probe)
+        self._store.log_event(run_id, "redteam", "mutate",
+                              f"{seed.id}: partial → generating {n} variants")
+        variants = await mutator.mutate(base_messages, seed.target_invariant,
+                                        verdict.rationale, n=n)
+        cost = getattr(mutator, "cost_usd", 0.0) or 0.0
+        if cost:
+            self._store.log_cost(run_id, "redteam", getattr(mutator, "_model", "redteam"),
+                                 0, 0, cost)
+        for i, variant in enumerate(variants):
+            child = await executor.run(seed, directive.directive_id, generation=1,
+                                       parent_attempt_id=parent.attempt_id,
+                                       override_messages=variant)
+            self._store.record_attempt(run_id, child)
+            cv = judge.evaluate_attempt(child)
+            self._store.record_verdict(run_id, cv)
+            self._store.log_event(run_id, "judge", "verdict",
+                                  f"{seed.id}#mut{i} → {_enum(cv.outcome)}")
+            if cv.outcome == Outcome.success:
+                self._store.log_event(run_id, "redteam", "mutation_breakthrough",
+                                      f"{seed.id}#mut{i} broke through after a partial")
+                self._promote(seed, child, cv, run_id)
+
+    @staticmethod
+    def _seed_messages(seed: Seed) -> list[str]:
+        """Messages to mutate, one per step — only when EVERY step is a message-
+        bearing chat turn (direct, multi-turn, persona injections). Seeds with HTTP
+        or upload steps are skipped: mutating a non-message step is meaningless."""
+        msgs: list[str] = []
+        for step in seed.steps:
+            if step.kind == "chat" and step.message:
+                msgs.append(step.message)
+            else:
+                return []
+        return msgs
 
     def _promote(self, seed: Seed, attempt: AttackAttempt, verdict: Verdict, run_id: str) -> None:
         exploit = ConfirmedExploit(

@@ -31,6 +31,18 @@ class CampaignResult:
     by_outcome: dict[str, int]
     exploits_new: int
     directive_rationale: str
+    mutations_run: int = 0
+
+
+def build_mutator(settings: Settings):
+    """A Mutator is always available — it has a deterministic (keyless) fallback, so
+    the mutation loop runs with or without an ANTHROPIC_API_KEY."""
+    try:
+        from adversaryforge.llm.mutator import Mutator
+
+        return Mutator(settings)
+    except Exception:
+        return None
 
 
 async def _target_version(client: TargetClient) -> str:
@@ -60,6 +72,8 @@ async def run_campaign(
     categories: list[str] | None = None,
     sweep: bool = True,
     limit: int | None = None,
+    mutate: bool = True,
+    n_variants: int = 8,
 ) -> CampaignResult:
     settings = settings or get_settings()
     adapter = agentforge_adapter(settings.target_base_url)
@@ -68,6 +82,7 @@ async def run_campaign(
     library = SeedLibrary.load()
     orch = Orchestrator(store, library)
     judge = Judge(llm_adjudicator=build_llm_adjudicator(settings))
+    mutator = build_mutator(settings) if mutate else None
     authed = session.is_authenticated
 
     async with TargetClient(adapter, session, settings) as client:
@@ -91,14 +106,18 @@ async def run_campaign(
 
         by_outcome: dict[str, int] = {}
         successes = 0
+        mutations_run = 0
         exploits_before = _count_exploits(store)
         for seed in runnable:
             _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
-                                             executor, judge, run_id)
+                                             executor, judge, run_id,
+                                             mutator=mutator, n_variants=n_variants)
             out = _enum(verdict.outcome)
             by_outcome[out] = by_outcome.get(out, 0) + 1
             if verdict.outcome == Outcome.success:
                 successes += 1
+            elif verdict.outcome == Outcome.partial and mutator is not None:
+                mutations_run += 1
 
         cost = store.cost_summary(run_id)["usd"]
         store.end_run(run_id, cost)
@@ -113,6 +132,7 @@ async def run_campaign(
         by_outcome=by_outcome,
         exploits_new=exploits_new,
         directive_rationale=rationale,
+        mutations_run=mutations_run,
     )
 
 
