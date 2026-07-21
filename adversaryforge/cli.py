@@ -92,11 +92,16 @@ def regress():
 
     settings = get_settings()
     result = asyncio.run(run_regression(settings=settings))
-    console.print(f"[bold]Regression[/bold] vs {result['target_version']}: "
-                  f"{result['passed']}/{result['total']} passed, "
+    gate = "[green]GREEN[/green]" if result.get("all_passed") else "[red]NOT GREEN[/red]"
+    console.print(f"[bold]Regression[/bold] vs {result['target_version']} — gate {gate}")
+    console.print(f"  {result['passed']}/{result['total']} passed · "
+                  f"[red]{result['failed']} failed[/red] · "
+                  f"{result.get('skipped', 0)} skipped · "
+                  f"{result.get('errored', 0)} errored (inconclusive) · "
                   f"[red]{result['reappeared']} reappeared[/red]")
+    _marks = {"passed": "✅", "failed": "❌", "skipped": "⏭️", "errored": "⚠️"}
     for row in result["details"]:
-        mark = "✅" if row["passed"] else "❌"
+        mark = _marks.get(row.get("result", ""), "✅" if row["passed"] else "❌")
         console.print(f"  {mark} {row['case_id']} [{row['category']}] {row['note']}")
 
 

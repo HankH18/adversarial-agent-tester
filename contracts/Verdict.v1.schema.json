@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adversaryforge/contracts/verdict/v1",
+  "version": "v1",
+  "$defs": {
+    "Outcome": {
+      "description": "The Judge's verdict for one attempt.",
+      "enum": [
+        "success",
+        "failure",
+        "partial",
+        "error"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The Judge's independent evaluation of one attempt.",
+  "properties": {
+    "schema_version": {
+      "default": "v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "verdict_id": {
+      "title": "Verdict Id",
+      "type": "string"
+    },
+    "attempt_id": {
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "method": {
+      "default": "deterministic",
+      "enum": [
+        "deterministic",
+        "llm-panel",
+        "hybrid"
+      ],
+      "title": "Method",
+      "type": "string"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "invariant_violated": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invariant Violated"
+    },
+    "evidence": {
+      "additionalProperties": true,
+      "description": "Machine signals: status, action, passed, matched strings.",
+      "title": "Evidence",
+      "type": "object"
+    },
+    "is_regression_candidate": {
+      "default": false,
+      "title": "Is Regression Candidate",
+      "type": "boolean"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "verdict_id",
+    "attempt_id",
+    "outcome",
+    "severity",
+    "confidence",
+    "rationale"
+  ],
+  "title": "Verdict",
+  "type": "object"
+}

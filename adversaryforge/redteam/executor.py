@@ -27,6 +27,7 @@ class SeedExecutor:
                   override_messages: list[str] | None = None) -> AttackAttempt:
         transcript: list[TranscriptTurn] = []
         step_convos: list[int | None] = []
+        captured_doc_ids: list[str] = []  # document ids returned by prior upload steps
 
         for i, step in enumerate(seed.steps):
             msg_override = None
@@ -41,15 +42,18 @@ class SeedExecutor:
                 step_convos.append(None)
                 continue
 
-            method, path, body, headers, params = self._compile(step, step_convos, msg_override)
-            attacker_content = self._attacker_summary(step, body, msg_override)
+            method, path, body, headers, params, files, data = self._compile(
+                step, step_convos, captured_doc_ids, msg_override)
+            attacker_content = self._attacker_summary(step, body, msg_override, files)
             transcript.append(TranscriptTurn(role="attacker", content=attacker_content))
 
             resp = await self._client.request(
-                method, path, json=body, headers=headers, params=params
-            )
+                method, path, json=body, headers=headers, params=params, files=files, data=data)
             transcript.append(self._target_turn(resp))
             step_convos.append(self._extract_conversation_id(resp))
+            doc_id = self._extract_document_id(resp)
+            if doc_id is not None:
+                captured_doc_ids.append(doc_id)
 
         return AttackAttempt(
             attempt_id="at_" + uuid.uuid4().hex[:12],
@@ -96,7 +100,9 @@ class SeedExecutor:
         )
 
     # ── compilation ────────────────────────────────────────────────────────
-    def _compile(self, step: Step, step_convos: list[int | None], msg_override: str | None):
+    def _compile(self, step: Step, step_convos: list[int | None],
+                 captured_doc_ids: list[str], msg_override: str | None):
+        """Returns (method, path, json_body, headers, params, files, data)."""
         headers = dict(step.headers or {})
         params = dict(step.params or {})
         if step.kind == "chat":
@@ -106,27 +112,73 @@ class SeedExecutor:
             }
             if step.clinician_id is not None:
                 body["clinician_id"] = step.clinician_id
-            if step.document_ids:
-                body["document_ids"] = step.document_ids
+            doc_ids = self._resolve_doc_ids(step.document_ids, captured_doc_ids)
+            if doc_ids:
+                body["document_ids"] = doc_ids
             if step.conversation_id_from_step is not None:
                 idx = step.conversation_id_from_step
                 if 0 <= idx < len(step_convos) and step_convos[idx] is not None:
                     body["conversation_id"] = step_convos[idx]
-            return "POST", "/v1/chat", body, headers, params
+            return "POST", "/v1/chat", body, headers, params, None, None
+        # multipart upload step
+        if step.upload_file:
+            uf = step.upload_file
+            files = {"file": (uf.get("filename", "payload.txt"),
+                              uf.get("text", ""),
+                              uf.get("content_type", "text/plain"))}
+            data = {k: str(v) for k, v in (step.json_body or {}).items()}
+            return step.method, step.path, None, headers, params, files, data
         # generic http
         body = dict(step.json_body) if step.json_body else None
-        if body and msg_override is not None and "message" in body:
-            body["message"] = msg_override
-        return step.method, step.path, body, headers, params
+        if body:
+            if msg_override is not None and "message" in body:
+                body["message"] = msg_override
+            if "document_ids" in body:
+                body["document_ids"] = self._resolve_doc_ids(body["document_ids"], captured_doc_ids)
+        return step.method, step.path, body, headers, params, None, None
 
     @staticmethod
-    def _attacker_summary(step: Step, body: Any, msg_override: str | None) -> str:
+    def _resolve_doc_ids(doc_ids: list[str] | None, captured: list[str]) -> list[str] | None:
+        """Substitute the 'from-upload' sentinel with the most recently captured
+        document id. Leaves other ids untouched; drops the sentinel if nothing was
+        captured (so the step is honest rather than sending a literal placeholder)."""
+        if not doc_ids:
+            return doc_ids
+        out: list[str] = []
+        for d in doc_ids:
+            if d == "from-upload":
+                if captured:
+                    out.append(captured[-1])
+            else:
+                out.append(d)
+        return out or None
+
+    @staticmethod
+    def _attacker_summary(step: Step, body: Any, msg_override: str | None,
+                          files: Any = None) -> str:
+        if files is not None:
+            uf = step.upload_file or {}
+            return f"{step.method} {step.path} [upload {uf.get('filename','file')}]: {uf.get('text','')[:200]}"
         if step.kind == "chat" or (isinstance(body, dict) and "message" in body):
             msg = msg_override if msg_override is not None else (
                 step.message or (body or {}).get("message", "")
             )
             return str(msg)
         return f"{step.method} {step.path} {body if body is not None else ''}".strip()
+
+    @staticmethod
+    def _extract_document_id(resp: TargetResponse) -> str | None:
+        j = resp.json
+        if not isinstance(j, dict):
+            return None
+        for key in ("id", "document_id", "doc_id"):
+            v = j.get(key)
+            if isinstance(v, (str, int)):
+                return str(v)
+        doc = j.get("document")
+        if isinstance(doc, dict) and doc.get("id") is not None:
+            return str(doc["id"])
+        return None
 
     @staticmethod
     def _target_turn(resp: TargetResponse) -> TranscriptTurn:

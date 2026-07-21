@@ -17,6 +17,10 @@ venv/
 *.key
 secrets/
 
+# Live vulnerability tracker — confirmed weaknesses on a running, operator-owned
+# target. Publishing this would disclose real exploitable issues. Keep local.
+LIVE_FINDINGS.md
+
 # Platform runtime data (regenerated; large)
 *.sqlite
 *.sqlite-journal

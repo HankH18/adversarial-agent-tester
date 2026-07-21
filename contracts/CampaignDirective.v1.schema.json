@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adversaryforge/contracts/campaigndirective/v1",
+  "version": "v1",
+  "$defs": {
+    "AttackCategory": {
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_role"
+      ],
+      "title": "AttackCategory",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What the Orchestrator tells the Red Team to attack next.",
+  "properties": {
+    "schema_version": {
+      "default": "v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "directive_id": {
+      "title": "Directive Id",
+      "type": "string"
+    },
+    "category": {
+      "$ref": "#/$defs/AttackCategory"
+    },
+    "subcategory": {
+      "default": "",
+      "title": "Subcategory",
+      "type": "string"
+    },
+    "rationale": {
+      "description": "Human-readable why-this-now (LLM-written).",
+      "title": "Rationale",
+      "type": "string"
+    },
+    "target_invariant": {
+      "description": "The invariant id this campaign tries to falsify.",
+      "title": "Target Invariant",
+      "type": "string"
+    },
+    "max_attempts": {
+      "default": 10,
+      "exclusiveMinimum": 0,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "seed_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Seed Ids",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "directive_id",
+    "category",
+    "rationale",
+    "target_invariant"
+  ],
+  "title": "CampaignDirective",
+  "type": "object"
+}

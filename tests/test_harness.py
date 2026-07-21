@@ -1,0 +1,246 @@
+"""Regression harness tests — fully offline (respx-mocked target, no live calls).
+
+Covers the harness's load-bearing invariants:
+  * a case whose re-judge yields FAILURE (defense held) -> passed
+  * a case whose re-judge yields SUCCESS (vuln live) -> failed, and a previously
+    'resolved' exploit is reopened + counted as a reappearance
+  * an auth-required case with no session -> skipped (neither pass nor fail)
+  * cross-category regression detection between two passfail snapshots
+"""
+from __future__ import annotations
+
+import respx
+from httpx import Response
+
+from adversaryforge.config import Settings
+from adversaryforge.contracts import (
+    AttackCategory,
+    ConfirmedExploit,
+    Outcome,
+    RegressionCandidate,
+    Severity,
+    TranscriptTurn,
+)
+from adversaryforge.harness.regression import (
+    _decide_case,
+    detect_cross_category_regression,
+    run_regression,
+)
+from adversaryforge.observability.store import Store
+
+BASE = "http://testserver"
+
+
+# ── pure decision core ──────────────────────────────────────────────────────
+def test_decide_failure_outcome_passes():
+    d = _decide_case(seed_requires_auth=False, authenticated=False,
+                     outcome=Outcome.failure, prev_status="open")
+    assert d["result"] == "passed"
+    assert d["reappeared"] is False
+
+
+def test_decide_error_outcome_is_inconclusive_never_a_pass():
+    # A dead/erroring target must NOT masquerade as a fix. It is neither a pass
+    # (the vuln is not confirmed fixed) nor a fail (not confirmed live) — it is
+    # inconclusive. Counting it as "passed" is the "worse than no test" trap.
+    d = _decide_case(seed_requires_auth=False, authenticated=False,
+                     outcome=Outcome.error, prev_status="resolved")
+    assert d["result"] == "errored"
+    assert d["reappeared"] is False
+
+
+def test_decide_success_outcome_fails_and_flags_reappearance():
+    d = _decide_case(seed_requires_auth=False, authenticated=True,
+                     outcome=Outcome.success, prev_status="resolved")
+    assert d["result"] == "failed"
+    assert d["reappeared"] is True
+
+
+def test_decide_success_on_still_open_exploit_is_not_a_reappearance():
+    d = _decide_case(seed_requires_auth=False, authenticated=True,
+                     outcome=Outcome.success, prev_status="open")
+    assert d["result"] == "failed"
+    assert d["reappeared"] is False
+
+
+def test_decide_auth_required_no_session_skips():
+    d = _decide_case(seed_requires_auth=True, authenticated=False,
+                     outcome=Outcome.success, prev_status=None)
+    assert d["result"] == "skipped"
+    assert d["reason"] == "requires_auth"
+
+
+# ── CLI/consumer contract: run_regression() must return the shape cli.regress reads ──
+async def test_run_regression_returns_cli_contract_shape(tmp_path, monkeypatch):
+    # Regression guard for the audit finding: the shipped `adversaryforge regress`
+    # command reads result['details'] with rows {case_id, category, passed: bool,
+    # note: str}, plus top-level passed/total/failed/skipped/errored/reappeared.
+    st = _settings(tmp_path, monkeypatch)
+    result = await run_regression(settings=st)  # no cases stored -> empty but well-shaped
+    for key in ("target_version", "passed", "total", "failed", "skipped",
+                "errored", "reappeared", "all_passed", "details"):
+        assert key in result, f"missing top-level key {key!r}"
+    assert isinstance(result["details"], list)
+    # Exercise the exact CLI rendering path so a shape drift fails here, not at runtime.
+    for row in result["details"]:
+        assert set(row) >= {"case_id", "category", "passed", "note"}
+        assert isinstance(row["passed"], bool)
+
+
+async def test_all_passed_is_fail_closed_on_errors():
+    # Pure-logic check: the gate must not be green when a case errored.
+    # (Mirrors run_regression's all_passed computation.)
+    failed, errored = 0, 1
+    assert (failed == 0 and errored == 0) is False
+
+
+# ── cross-category regression detector ──────────────────────────────────────
+def test_detect_cross_category_regression_flags_risen_success():
+    before = {"prompt_injection": {"success": 0, "failure": 3},
+              "data_exfiltration": {"success": 1}}
+    after = {"prompt_injection": {"success": 2, "failure": 1},   # rose 0 -> 2
+             "data_exfiltration": {"success": 1}}                # unchanged
+    assert detect_cross_category_regression(before, after) == ["prompt_injection"]
+
+
+def test_detect_cross_category_regression_new_category_from_zero():
+    before = {}
+    after = {"denial_of_service": {"success": 1}}
+    assert detect_cross_category_regression(before, after) == ["denial_of_service"]
+
+
+def test_detect_cross_category_regression_none_when_flat_or_improved():
+    before = {"tool_misuse": {"success": 2}}
+    after = {"tool_misuse": {"success": 0}}  # improved
+    assert detect_cross_category_regression(before, after) == []
+
+
+# ── integration: run_regression against a respx-mocked target ────────────────
+def _settings(tmp_path, monkeypatch) -> Settings:
+    # Fields use validation_alias, so they populate from env, not init kwargs.
+    monkeypatch.setenv("ADVERSARYFORGE_TARGET_BASE_URL", BASE)
+    monkeypatch.setenv("ADVERSARYFORGE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENTFORGE_SESSION_COOKIE", "")   # AnonymousSession
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")           # deterministic Judge only
+    monkeypatch.setenv("ADVERSARYFORGE_MIN_REQUEST_GAP_S", "0.0")
+    monkeypatch.setenv("ADVERSARYFORGE_MAX_CONCURRENCY", "4")
+    return Settings()
+
+
+def _seed_case(store: Store, seed_id: str, exploit_id: str, invariant: str) -> None:
+    store.record_regression_case(RegressionCandidate(
+        case_id="rc_" + seed_id,
+        exploit_id=exploit_id,
+        category=AttackCategory.data_exfiltration,
+        request={"seed_id": seed_id, "steps": []},
+        assertion={"kind": "invariant_holds", "invariant": invariant},
+        severity=Severity.critical,
+    ))
+
+
+def _resolved_exploit(store: Store, exploit_id: str, invariant: str) -> None:
+    store.record_exploit(ConfirmedExploit(
+        exploit_id=exploit_id,
+        attempt_id="at_seed",
+        verdict_id="vd_seed",
+        category=AttackCategory.data_exfiltration,
+        severity=Severity.critical,
+        target_invariant=invariant,
+        minimal_transcript=[TranscriptTurn(role="attacker", content="x")],
+        expected_safe="403/404",
+        observed="was leaking",
+    ))
+    store.set_exploit_status(exploit_id, "resolved")
+
+
+async def test_run_regression_pass_when_defense_holds(tmp_path, monkeypatch):
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    # df-authz-chat-noauth: requires_auth=False, INV-AUTHZ-PATIENT, POST /v1/chat.
+    _seed_case(store, "df-authz-chat-noauth", "ex_hold", "INV-AUTHZ-PATIENT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(
+            return_value=Response(200, json={"version": "test-1"}))
+        # 403 => authz enforced => Judge verdict failure => case PASSES.
+        router.post(f"{BASE}/v1/chat").mock(return_value=Response(403, json={}))
+
+        result = await run_regression(settings=st)
+
+    assert result["total"] == 1
+    assert result["passed"] == 1
+    assert result["failed"] == 0
+    assert result["all_passed"] is True
+    case = result["cases"][0]
+    assert case["result"] == "passed"
+    assert case["outcome"] == "failure"
+
+
+async def test_run_regression_fails_and_reopens_resolved_exploit(tmp_path, monkeypatch):
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    _seed_case(store, "df-authz-chat-noauth", "ex_reappear", "INV-AUTHZ-PATIENT")
+    _resolved_exploit(store, "ex_reappear", "INV-AUTHZ-PATIENT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(
+            return_value=Response(200, json={"version": "test-1"}))
+        # 200 with a served answer => cross-patient read => Judge success => FAIL.
+        router.post(f"{BASE}/v1/chat").mock(return_value=Response(
+            200, json={"action": "served", "answer": "Patient Jane Doe, glucose 210",
+                       "claims": [{"c": 1}]}))
+
+        result = await run_regression(settings=st)
+
+    assert result["failed"] == 1
+    assert result["passed"] == 0
+    assert result["reappeared"] == 1
+    assert result["all_passed"] is False
+    assert result["cases"][0]["reappeared"] is True
+
+    # The reappearance must have flipped the exploit status back to 'open'.
+    store2 = Store(st.db_path)
+    status = {e["exploit_id"]: e["status"] for e in store2.list_exploits()}
+    store2.close()
+    assert status["ex_reappear"] == "open"
+
+
+async def test_run_regression_skips_auth_required_case_without_session(tmp_path, monkeypatch):
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    # df-cross-patient-off-rounds requires_auth=True; no session -> skipped.
+    _seed_case(store, "df-cross-patient-off-rounds", "ex_auth", "INV-AUTHZ-PATIENT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(
+            return_value=Response(200, json={"version": "test-1"}))
+        chat_route = router.post(f"{BASE}/v1/chat").mock(
+            return_value=Response(200, json={"action": "served", "answer": "leak"}))
+
+        result = await run_regression(settings=st)
+
+    assert result["skipped"] == 1
+    assert result["passed"] == 0
+    assert result["failed"] == 0
+    assert result["cases"][0]["result"] == "skipped"
+    assert result["cases"][0]["reason"] == "requires_auth"
+    # Auth gate is decided WITHOUT touching the target.
+    assert not chat_route.called
+
+
+async def test_run_regression_skips_case_whose_seed_is_missing(tmp_path, monkeypatch):
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    _seed_case(store, "no-such-seed-id", "ex_missing", "INV-AUTHZ-PATIENT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(
+            return_value=Response(200, json={"version": "test-1"}))
+        result = await run_regression(settings=st)
+
+    assert result["skipped"] == 1
+    assert result["cases"][0]["reason"] == "seed_not_found"

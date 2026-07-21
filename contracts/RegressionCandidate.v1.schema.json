@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adversaryforge/contracts/regressioncandidate/v1",
+  "version": "v1",
+  "$defs": {
+    "AttackCategory": {
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_role"
+      ],
+      "title": "AttackCategory",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A frozen, replayable case derived from a confirmed exploit.",
+  "properties": {
+    "schema_version": {
+      "default": "v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "exploit_id": {
+      "title": "Exploit Id",
+      "type": "string"
+    },
+    "category": {
+      "$ref": "#/$defs/AttackCategory"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "assertion": {
+      "additionalProperties": true,
+      "description": "e.g. {'kind':'status_in','values':[401,403]} or {'kind':'answer_equals_withheld'}",
+      "title": "Assertion",
+      "type": "object"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "added_at": {
+      "format": "date-time",
+      "title": "Added At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "case_id",
+    "exploit_id",
+    "category",
+    "request",
+    "assertion",
+    "severity"
+  ],
+  "title": "RegressionCandidate",
+  "type": "object"
+}

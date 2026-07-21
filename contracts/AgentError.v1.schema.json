@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adversaryforge/contracts/agenterror/v1",
+  "version": "v1",
+  "additionalProperties": false,
+  "description": "The one error envelope every agent emits for its known failure modes.",
+  "properties": {
+    "schema_version": {
+      "default": "v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "code": {
+      "enum": [
+        "target_unreachable",
+        "budget_exceeded",
+        "judge_timeout",
+        "no_findings_in_window",
+        "regression_detected",
+        "auth_missing",
+        "invalid_contract",
+        "llm_unavailable"
+      ],
+      "title": "Code",
+      "type": "string"
+    },
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "retriable": {
+      "default": false,
+      "title": "Retriable",
+      "type": "boolean"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "agent",
+    "message"
+  ],
+  "title": "AgentError",
+  "type": "object"
+}

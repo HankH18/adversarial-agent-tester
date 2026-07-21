@@ -46,6 +46,13 @@ class Step(BaseModel):
         "to thread into this turn (multi-turn state).",
     )
     document_ids: list[str] | None = None
+    upload_file: dict[str, str] | None = Field(
+        default=None,
+        description="For a multipart upload step: {filename, content_type, text}. The executor "
+        "sends it as multipart 'file' (+ patient_id/clinician_id form fields from json_body) and "
+        "captures the returned document id. Later steps use the sentinel 'from-upload' in "
+        "document_ids to reference it.",
+    )
     note: str = ""
 
 

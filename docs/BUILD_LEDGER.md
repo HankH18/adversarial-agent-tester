@@ -30,19 +30,19 @@
 | # | Gate | Source | State |
 |---|------|--------|-------|
 | G1 | Deployed target live + submitted URL | Stage 1 / hard gate | ✅ live |
-| G2 | `THREAT_MODEL.md` — full surface + ~500-word summary | Stage 2 / hard gate | ⬜ |
-| G3 | `evals/` — reproducible cases across ≥3 attack categories | Stage 3 / hard gate | 🟡 3 cats live (unauth); auth suite staged |
-| G4 | ≥1 agent role running LIVE against deploy | Stage 3 / hard gate | ✅ full spine ran live (run_5f3d54bd) |
+| G2 | `THREAT_MODEL.md` — full surface + ~500-word summary | Stage 2 / hard gate | ✅ built (543-word summary, 6 cats, OWASP) |
+| G3 | `evals/` — reproducible cases across ≥3 attack categories | Stage 3 / hard gate | ✅ 23 seeds, 6 cats (8 unauth live + 15 auth staged) |
+| G4 | ≥1 agent role running LIVE against deploy | Stage 3 / hard gate | ✅ full spine ran live |
 | G5 | `ARCHITECTURE.md` — multi-agent, ~500-word summary, diagram | Stage 4 / hard gate | ✅ exists |
-| G6 | `USERS.md` | Submission | ⬜ |
-| G7 | README: setup, arch overview, deployed link, run instructions | Submission | ⬜ |
-| G8 | ≥3 distinct professional vulnerability reports | Submission | ⬜ |
-| G9 | AI Cost Analysis (100/1K/10K/100K runs) | Submission | ⬜ |
-| G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ⬜ |
-| G11 | OWASP Top-10 + LLM-Top-10 mapping on each eval case | Eng req | ⬜ |
-| G12 | Regression harness: versioned store, replay, reappearance detect | Platform req | ⬜ |
-| G13 | Observability: coverage/passfail/trend/cost/open-findings queries | Platform req | ⬜ |
-| G14 | Multi-agent system actually runs a campaign end-to-end | Platform req | ⬜ |
+| G6 | `USERS.md` | Submission | ✅ 4 personas + why-automation |
+| G7 | README: setup, arch overview, deployed link, run instructions | Submission | ✅ |
+| G8 | ≥3 distinct professional vulnerability reports | Submission | ✅ 3 generated (reproducible, invariant-specific) |
+| G9 | AI Cost Analysis (100/1K/10K/100K runs) | Submission | 🟡 pricing built; COST_ANALYSIS.md TODO (Cycle 2) |
+| G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ✅ 8 schemas, 29 tests, byte-deterministic |
+| G11 | OWASP Top-10 + LLM-Top-10 mapping on each eval case | Eng req | ✅ every seed mapped |
+| G12 | Regression harness: versioned store, replay, reappearance detect | Platform req | ✅ fixed + fail-closed; `regress` runs live |
+| G13 | Observability: coverage/passfail/trend/cost/open-findings queries | Platform req | ✅ store + `status` |
+| G14 | Multi-agent system actually runs a campaign end-to-end | Platform req | ✅ campaign+regress+report all run live |
 
 ## Component board
 Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · 🚫 blocked · 🔍 in-audit
@@ -70,6 +70,26 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 | Cost analysis | `docs/COST_ANALYSIS.md` | ⬜ | G9 |
 
 ## Cycle log
+### Cycle 1 — parallel fan-out + audit swarm (7 builders) ✅ DONE
+- Workflow `wf_91df4b1a`: 7 builders (disjoint paths) → per-component adversarial 4-lens audit →
+  integration critic. 15 agents, 0 errors, ~1.1M tokens.
+- **Delivered:** regression harness (G12), documentation agent + 3 reports (G8), 15 authenticated
+  seeds all-6-categories (G3/G11), `/contracts` 8 JSON schemas + 29 contract tests (G10), LLM layer
+  (adjudicator+mutator+pricing, key-gated), THREAT_MODEL.md (G2), USERS.md (G6). Plus README (G7, lead).
+- **Audit caught real defects (green tests were hiding them):**
+  - harness FAIL — returned `cases`, but CLI+spec need `details`/`passed`/`note` → `regress` crashed;
+    also a dead target scored every case "passed". **Fixed**: added `details` contract, made `error`
+    outcome *inconclusive* (fail-closed gate = `failed==0 and errored==0`), corrected the test that
+    encoded the bug, added a CLI-contract regression test.
+  - auth-seeds HIGH — `pi-indirect-document-injection` relied on a `from-upload` substitution that
+    didn't exist + sent JSON to a multipart endpoint. **Fixed**: implemented real multipart upload +
+    document-id capture + sentinel substitution in the executor (+3 offline tests); seed now honest.
+  - editable install got clobbered by a builder → `adversaryforge` console script broke. **Fixed** by
+    reinstall. Also cleaned test-fixture pollution from the real SQLite DB (regenerated clean baseline).
+- **Verified live:** clean campaign (3 findings), `regress` (3 open findings, gate NOT GREEN, correct),
+  `report` (3 professional reports). **76/76 tests pass.**
+- Minor polish deferred (doc markdown lists, canary false-positive hardening, threat-model nits) → Cycle 2.
+
 ### Cycle 0 — foundation (lead) ✅ DONE
 - Built the coherent spine: config, target adapter (24 eps, 11 invariants), pluggable
   SessionProvider, throttled client, versioned contracts, SQLite observability store,

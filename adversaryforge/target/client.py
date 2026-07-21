@@ -110,6 +110,7 @@ class TargetClient:
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         files: Any | None = None,
+        data: dict[str, Any] | None = None,
     ) -> TargetResponse:
         corr = uuid.uuid4().hex
         url = self._adapter.base_url + path if path.startswith("/") else path
@@ -125,10 +126,11 @@ class TargetClient:
                 resp = await self._client.request(
                     method,
                     url,
-                    json=json,
+                    json=json if files is None else None,
                     headers=req_headers,
                     params=params,
                     files=files,
+                    data=data,
                 )
                 latency = (time.perf_counter() - started) * 1000
                 return TargetResponse(

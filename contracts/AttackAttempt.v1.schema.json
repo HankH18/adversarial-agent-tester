@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adversaryforge/contracts/attackattempt/v1",
+  "version": "v1",
+  "$defs": {
+    "AttackCategory": {
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_role"
+      ],
+      "title": "AttackCategory",
+      "type": "string"
+    },
+    "OwaspLlm": {
+      "enum": [
+        "LLM01:2025-Prompt Injection",
+        "LLM02:2025-Insecure Output Handling",
+        "LLM04:2025-Data and Model Poisoning",
+        "LLM05:2025-Supply Chain",
+        "LLM06:2025-Sensitive Information Disclosure",
+        "LLM08:2025-Excessive Agency",
+        "LLM10:2025-Unbounded Consumption"
+      ],
+      "title": "OwaspLlm",
+      "type": "string"
+    },
+    "OwaspWeb": {
+      "enum": [
+        "A01:2021-Broken Access Control",
+        "A02:2021-Cryptographic Failures",
+        "A03:2021-Injection",
+        "A04:2021-Insecure Design",
+        "A05:2021-Security Misconfiguration",
+        "A06:2021-Vulnerable and Outdated Components",
+        "A07:2021-Identification and Authentication Failures",
+        "A08:2021-Software and Data Integrity Failures",
+        "A09:2021-Security Logging and Monitoring Failures",
+        "A10:2021-SSRF"
+      ],
+      "title": "OwaspWeb",
+      "type": "string"
+    },
+    "TranscriptTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "attacker",
+            "target"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "http_status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "TranscriptTurn",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One executed attack. The Judge reads only `transcript` (+ `expected_safe`\nand the invariant) \u2014 never `technique`/`intent`/`confidence` (info barrier).",
+  "properties": {
+    "schema_version": {
+      "default": "v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "attempt_id": {
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "directive_id": {
+      "title": "Directive Id",
+      "type": "string"
+    },
+    "seed_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed Id"
+    },
+    "category": {
+      "$ref": "#/$defs/AttackCategory"
+    },
+    "subcategory": {
+      "default": "",
+      "title": "Subcategory",
+      "type": "string"
+    },
+    "technique": {
+      "default": "",
+      "title": "Technique",
+      "type": "string"
+    },
+    "intent": {
+      "default": "",
+      "title": "Intent",
+      "type": "string"
+    },
+    "attacker_confidence": {
+      "default": 0.0,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Attacker Confidence",
+      "type": "number"
+    },
+    "generation": {
+      "default": 0,
+      "description": "Mutation depth from the seed.",
+      "minimum": 0,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "parent_attempt_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Attempt Id"
+    },
+    "target_invariant": {
+      "title": "Target Invariant",
+      "type": "string"
+    },
+    "expected_safe": {
+      "description": "The safe behavior the target should exhibit.",
+      "title": "Expected Safe",
+      "type": "string"
+    },
+    "transcript": {
+      "items": {
+        "$ref": "#/$defs/TranscriptTurn"
+      },
+      "title": "Transcript",
+      "type": "array"
+    },
+    "owasp_web": {
+      "items": {
+        "$ref": "#/$defs/OwaspWeb"
+      },
+      "title": "Owasp Web",
+      "type": "array"
+    },
+    "owasp_llm": {
+      "items": {
+        "$ref": "#/$defs/OwaspLlm"
+      },
+      "title": "Owasp Llm",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "attempt_id",
+    "directive_id",
+    "category",
+    "target_invariant",
+    "expected_safe",
+    "transcript"
+  ],
+  "title": "AttackAttempt",
+  "type": "object"
+}
