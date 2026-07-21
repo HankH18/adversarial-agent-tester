@@ -6,9 +6,12 @@ Independence is structural, not procedural:
      `JudgeView` — the transcript, the invariant under test, and the expected safe
      behavior. It is *impossible* for the Judge to read the attacker's technique,
      intent, or confidence, because those fields are not in the view it is handed.
-  2. **Different model family.** When an LLM pass is needed, it runs on Claude
-     (the attacker is a different family) — never the model that authored the
-     attack.
+  2. **Model separation (planned / config-switchable).** The design routes the
+     attacker to a different model family (Hermes via OpenRouter) from the Claude
+     Judge. As shipped only Anthropic keys were available, so both tiers default to
+     Claude and this leg is not yet active (swap `redteam_model` to restore it; see
+     docs/AS_BUILT.md §2.3). Independence today rests on (1) the information barrier
+     and (3) deterministic-first — neither depends on model family.
   3. **Deterministic-first.** The target exposes machine-checkable signals
      (`action`, `passed`, HTTP status, the withhold sentinel). Most verdicts are
      pure code; the LLM is a second opinion only for prose-level judgments

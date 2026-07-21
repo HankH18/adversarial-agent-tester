@@ -311,8 +311,13 @@ def validate_exploit(exploit: ConfirmedExploit) -> str | None:
 
 
 # ─────────────────────── report construction ──────────────────────────────
-def _report_id(exploit_id: str) -> str:
-    digest = hashlib.sha256(exploit_id.encode()).hexdigest()[:10]
+def _report_id(exploit: ConfirmedExploit) -> str:
+    # Stable across runs: key on the FINDING identity (category + minimal
+    # transcript), NOT the per-run exploit_id. So regenerating overwrites the same
+    # VULN-*.md file instead of accumulating duplicates for the same finding.
+    cat = exploit.category.value if hasattr(exploit.category, "value") else str(exploit.category)
+    seq = cat + "|" + "|".join(f"{t.role}:{t.content}" for t in exploit.minimal_transcript)
+    digest = hashlib.sha256(seq.encode()).hexdigest()[:10]
     return f"VULN-{digest}"
 
 
@@ -356,7 +361,7 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
     )
 
     return VulnReport(
-        report_id=_report_id(exploit.exploit_id),
+        report_id=_report_id(exploit),
         exploit_id=exploit.exploit_id,
         title=title,
         severity=severity,
@@ -491,6 +496,10 @@ def generate_all_reports(*, settings=None) -> int:
     store = Store(settings.db_path)
     written = 0
     seen_ids: set[str] = set()
+    # Clean slate: remove stale VULN-*.md so reports/ always reflects the CURRENT
+    # exploit DB exactly (no accumulation of duplicates from earlier runs).
+    for stale in _REPORTS_DIR.glob("VULN-*.md"):
+        stale.unlink()
     try:
         for row in store.list_exploits():
             exploit_id = row.get("exploit_id")

@@ -27,7 +27,7 @@ never call each other directly — they exchange **versioned, typed JSON-Schema 
 |---|---|---|---|
 | **Orchestrator** | Strategist — deterministic target selection from the observability substrate | trusted | code (LLM only for prose rationale) |
 | **Red Team** | Adversary — seed execution + mutation of partial attacks | untrusted / sandboxed | Claude (Anthropic) / subagent-driven |
-| **Judge** | Independent evaluator — success/failure/partial per attempt | semi-trusted, cannot act | **deterministic-first**, LLM-second (different model family) |
+| **Judge** | Independent evaluator — success/failure/partial per attempt | semi-trusted, cannot act | **deterministic-first**, LLM-second on Claude (attacker-family separation is planned/config-switchable — see [AS_BUILT](docs/AS_BUILT.md)) |
 | **Documentation** | Scribe — confirmed exploit → professional vuln report | gated | Claude + human approval on criticals |
 | **Regression Harness** | Freezes exploits into replayable, versioned tests | deterministic | code |
 | **Observability** | Append-only substrate the Orchestrator reads | deterministic | SQLite |

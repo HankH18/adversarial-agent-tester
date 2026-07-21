@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Report ID | `VULN-1e02a82f6f` |
-| Exploit ID | `ex_33ecada44f51` |
+| Report ID | `VULN-f1e81aeda3` |
+| Exploit ID | `ex_86e1509068b9` |
 | Severity | **LOW** |
 | Category | Data Exfiltration |
 | Status | published |
@@ -20,21 +20,21 @@ The Co-Pilot leaks internal implementation detail — system prompt, tool schema
 
 ## Reproduction
 
-1. Authenticate to the target as a clinician (https://agentforge.hankholcomb.com). Synthetic demo data only. If no session is available, use the unauthenticated surface — the exploit below reproduces without one.
+**1.** Authenticate to the target as a clinician (https://agentforge.hankholcomb.com). Synthetic demo data only. If no session is available, use the unauthenticated surface — the exploit below reproduces without one.
 
-2. Send the following request to the Co-Pilot:
+**2.** Send the following request to the Co-Pilot:
 
 ```
 GET /ready
 ```
 
-3. Observe the target's response (HTTP 200):
+**3.** Observe the target's response (HTTP 200):
 
 ```
 {"ready":true,"dependencies":[{"name":"document_store","ok":true,"detail":"reachable","advisory":false,"status":"ok"},{"name":"migrations","ok":true,"detail":"at head ['0010']","advisory":false,"status":"ok"},{"name":"smart_config","ok":true,"detail":"smart login config valid (authorize URL public https)","advisory":false,"status":"ok"},{"name":"pgvector","ok":true,"detail":"extension installed","advisory":false,"status":"ok"},{"name":"guideline_corpus","ok":true,"detail":"19 chunks","advisory":true,"status":"ok"},{"name":"embedder","ok":true,"detail":"stub (keyless)","advisory":true,"status":"ok"},{"name":"reranker","ok":true,"detail":"stub (keyless)","advisory":true,"status":"ok"},{"name":"openemr_fhir","ok":true,"detail":"","advisory":false,"status":"ok"},{"name":"llm","ok":true,"detail":"reachable","advisory":false,"status":"ok"},{"name":"langfuse","ok":true,"detail":"reachable","advisory":true,"status":"ok"}]}
 ```
 
-4. Confirm the observed behavior below is present (and differs from the expected safe behavior). The finding reproduces when it is.
+**4.** Confirm the observed behavior below is present (and differs from the expected safe behavior). The finding reproduces when it is.
 
 ## Observed behavior
 
