@@ -7,9 +7,13 @@ Data-quality contract (enforced here, per the platform requirements):
   * no duplicate exploit for the same attack sequence — enforced by a UNIQUE index
     on a content `dedupe_key` (hash of category + minimal transcript).
 
-Migrations: schema changes go through `apply_migrations`, which is additive and
-idempotent (SQLite `ADD COLUMN`), so existing records survive a field addition
-without data loss. `schema_version` is recorded in `meta`.
+Migrations: `apply_migrations` is idempotent — every table and index is created
+`IF NOT EXISTS`, so a fresh DB gets the full current schema and re-opening an
+up-to-date DB is a no-op; existing rows are never dropped or rewritten. The current
+`schema_version` is recorded in `meta`. Adding a field to a model means the fresh
+schema includes it; upgrading a *pre-existing older* DB in place would need an
+explicit `ALTER TABLE ... ADD COLUMN` step keyed off `schema_version` (the runtime
+DB here is disposable/regenerated, so that path is documented rather than shipped).
 """
 from __future__ import annotations
 

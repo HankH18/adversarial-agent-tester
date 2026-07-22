@@ -130,7 +130,7 @@ flowchart TB
     end
 
     subgraph untrusted["Untrusted attack plane (sandboxed)"]
-        RT["🗡️ Red Team Agent<br/>Strategist + Mutator<br/>(local open-weight model)"]
+        RT["🗡️ Red Team Agent<br/>Strategist + Mutator<br/>(Hermes 4 405B via OpenRouter)"]
     end
 
     subgraph eval["Independent evaluation plane"]

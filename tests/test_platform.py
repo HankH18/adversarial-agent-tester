@@ -112,6 +112,28 @@ async def test_run_campaign_exploits_new_is_a_delta(tmp_path, monkeypatch):
     assert result.exploits_new == 1  # only the one added this run, not the pre-existing
 
 
+async def test_run_campaign_real_chain_promotes_an_exploit(tmp_path, monkeypatch):
+    # No monkeypatch of run_seed: exercise the REAL Orchestrator -> executor -> Judge
+    # -> _promote chain end-to-end against a respx-mocked target.
+    monkeypatch.setenv("ADVERSARYFORGE_TARGET_BASE_URL", BASE)
+    monkeypatch.setenv("ADVERSARYFORGE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ADVERSARYFORGE_MIN_REQUEST_GAP_S", "0.0")
+    monkeypatch.setenv("ADVERSARYFORGE_NOSIGNAL_HALT_USD", "0")
+    st = Settings()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        # /ready leaks dependency inventory -> INV-INFO-DISCLOSURE success.
+        router.get(f"{BASE}/ready").mock(return_value=Response(
+            200, json={"dependencies": {"openemr": "ok"}, "database": "ok"}))
+        router.route().mock(return_value=Response(401, json={}))  # everything else: defense held
+        result = await plat.run_campaign(settings=st, categories=["data_exfiltration"])
+
+    assert result.successes >= 1        # di-ready-enum promoted via the real chain
+    assert result.exploits_new >= 1
+    assert Store(st.db_path)._conn.execute("SELECT COUNT(*) FROM exploits").fetchone()[0] >= 1
+
+
 def test_meter_judge_llm_logs_delta_not_cumulative(tmp_path):
     # The Judge adjudicator cost is cumulative; the meter must log per-call DELTAS
     # into the ledger (double-counting would corrupt the cost governor + analysis).

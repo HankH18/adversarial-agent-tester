@@ -47,7 +47,7 @@ after and reports whether it changed. In the run below the real
 | Wall clock | **55.379 s** |
 | Throughput | **1.806 attacks/sec** |
 | Outcomes | failure 52, success 36, partial 12 |
-| Exploits stored (deduped) | 13 |
+| Exploits stored (deduped) | 3 |
 
 ### Per-phase latency (ms)
 
@@ -65,7 +65,7 @@ after and reports whether it changed. In the run below the real
 |---|---|
 | Store write ops | 236 |
 | Writes/sec (over storage time only) | **1,771.3** |
-| Exploits stored (unique, after dedupe) | 13 |
+| Exploits stored (unique, after dedupe) | 3 |
 
 ### Memory
 
