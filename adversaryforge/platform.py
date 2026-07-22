@@ -128,7 +128,8 @@ async def run_campaign(
                 by_outcome[out] = by_outcome.get(out, 0) + 1
                 if verdict.outcome == Outcome.success:
                     successes += 1
-                elif verdict.outcome == Outcome.partial and mutator is not None:
+                elif (verdict.outcome == Outcome.partial and mutator is not None
+                      and Orchestrator._seed_messages(seed)):  # only counts real mutations
                     mutations_run += 1
 
                 # Cost governor: stop burning budget once it produces no signal.

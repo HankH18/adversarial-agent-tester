@@ -22,8 +22,8 @@ silently drift.
 | `CampaignDirective` | Orchestrator | Red Team |
 | `AttackAttempt` | Red Team | Judge |
 | `Verdict` | Judge | Observability, Documentation, Harness |
-| `ConfirmedExploit` | Judge | Documentation, Harness |
-| `RegressionCandidate` | Judge | Harness |
+| `ConfirmedExploit` | Orchestrator (on a Judge-confirmed success) | Documentation, Harness |
+| `RegressionCandidate` | Orchestrator (on a Judge-confirmed success) | Harness |
 | `VulnReport` | Documentation | Human / report store |
 | `AgentError` | **Every** agent | Orchestrator, Observability |
 

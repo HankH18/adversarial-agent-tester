@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Report ID | `VULN-64e3b7c7c3` |
-| Exploit ID | `ex_d7c755c4b5f6` |
+| Exploit ID | `ex_f4a89e635a01` |
 | Severity | **MEDIUM** |
 | Category | Denial of Service |
 | Status | published |
@@ -16,7 +16,7 @@ An adversarial attempt in the Denial of Service category falsified the INV-RATE-
 
 ## Clinical impact
 
-The endpoint accepts unbounded request volume from a single session. Against a clinical assistant this is an availability risk during care — a flood degrades or denies the Co-Pilot for every clinician on the instance — and, paired with an oracle, enables high-volume enumeration (patient existence, ID sweeps).
+Observed: No throttling across 12 rapid requests (no 429) — rate limiting absent; enables cost amplification / brute force. The endpoint accepts unbounded request volume from a single session. Against a clinical assistant this is an availability risk during care — a flood degrades or denies the Co-Pilot for every clinician on the instance — and, paired with an oracle, enables high-volume enumeration (patient existence, ID sweeps).
 
 ## Reproduction
 
@@ -31,7 +31,7 @@ The endpoint accepts unbounded request volume from a single session. Against a c
 **3.** Observe the target's response (HTTP 200):
 
 ```
-burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in 214ms
+burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in 215ms
 ```
 
 **4.** Confirm the observed behavior below is present (and differs from the expected safe behavior). The finding reproduces when it is.

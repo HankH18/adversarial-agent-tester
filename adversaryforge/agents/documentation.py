@@ -67,11 +67,12 @@ _INVARIANT_PLAYBOOK: dict[str, dict[str, str]] = {
     },
     "INV-INFO-DISCLOSURE": {
         "impact": (
-            "The Co-Pilot leaks internal implementation detail — system prompt, "
-            "tool schemas, model/version, or stack traces. Individually low-harm, "
-            "but it hands an attacker the exact map (tool names, argument shapes, "
-            "guardrail wording) needed to craft a reliable clinical-data or "
-            "excessive-agency exploit, and can expose infra hostnames/paths."
+            "The Co-Pilot deployment discloses internal state to an unauthenticated "
+            "caller. Individually low-harm, but it hands an attacker a reconnaissance "
+            "map — internal architecture, configuration, or contract surface — that "
+            "lowers the cost of every subsequent clinical-data or excessive-agency "
+            "attack. (Exactly what leaks is finding-specific; see the observed "
+            "behavior below.)"
         ),
         "remediation": (
             "Strip internal detail from every model-facing and error path: a "
@@ -375,7 +376,10 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
         category=category,
         status=status,
         summary=summary,
-        clinical_impact=play["impact"],
+        # Weave the actual observed disclosure into the impact so two findings that
+        # share an invariant do NOT emit byte-identical (and possibly wrong) text.
+        clinical_impact=(f"Observed: {exploit.observed.strip()} {play['impact']}"
+                         if exploit.observed and exploit.observed.strip() else play["impact"]),
         reproduction=reproduction,
         observed_behavior=(exploit.observed or "").strip(),
         expected_behavior=(exploit.expected_safe or "").strip(),

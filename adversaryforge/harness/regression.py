@@ -247,8 +247,14 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
             details.append(row)
 
         # Cross-category regression: did fixing/replaying push any OTHER category's
-        # success count up this run? (fixing one attack can regress another.)
-        cross_category = detect_cross_category_regression(passfail_before, store.passfail_rates())
+        # success count up? Exclude the categories we exercised this run — a replayed
+        # still-open case writes a fresh success verdict for its OWN category, which is
+        # not a cross-category effect. (A true cross-category signal needs a
+        # cross-VERSION comparison; within one replay window this is ~always empty.)
+        exercised = {r["category"] for r in details if r["result"] != "skipped"}
+        cross_category = [c for c in
+                          detect_cross_category_regression(passfail_before, store.passfail_rates())
+                          if c not in exercised]
         if cross_category:
             store.log_event(run_id, "harness", "cross_category_regression",
                             f"success rose in: {', '.join(cross_category)}")

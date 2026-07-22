@@ -44,6 +44,11 @@ store, human gate before publishing a critical finding.
 
 Requires **Python 3.11+** and [`uv`](https://github.com/astral-sh/uv).
 
+Run the CLI as **`python -m adversaryforge.cli <cmd>` from the repo root** — this always works. (The
+`adversaryforge` console script is equivalent but, on macOS, `uv` marks the editable-install `.pth`
+hidden, which Python's `site` skips; if the console script reports `No module named 'adversaryforge'`,
+run `chflags nohidden .venv/lib/python*/site-packages/*.pth` once, or just use the `-m` form.)
+
 ```bash
 # 1. Set up the environment
 uv venv --python 3.12
@@ -52,30 +57,26 @@ uv pip install -e '.[dev]'
 # 2. Configure (both secrets are OPTIONAL — the platform runs without them)
 cp .env.example .env      # then edit — see "Authentication & keys" below
 
-# 3. Run an adversarial campaign against the live target
-.venv/bin/adversaryforge campaign
-#    (equivalent, cwd-robust: .venv/bin/python -m adversaryforge.cli campaign)
-
-# 4. Read the observability snapshot the Orchestrator reads
-.venv/bin/adversaryforge status
-
-# 5. Generate vulnerability reports from confirmed exploits
-.venv/bin/adversaryforge report            # writes reports/*.md
-
-# 6. Re-run the regression suite against the current target version
-.venv/bin/adversaryforge regress
+# 3-6. Run the platform (from the repo root)
+.venv/bin/python -m adversaryforge.cli campaign   # attack the live target
+.venv/bin/python -m adversaryforge.cli status     # observability snapshot the Orchestrator reads
+.venv/bin/python -m adversaryforge.cli report     # (re)generate reports/*.md
+.venv/bin/python -m adversaryforge.cli regress    # re-run the fail-closed regression suite
 ```
 
 ### CLI
 
+Invoke as `python -m adversaryforge.cli <command>` from the repo root (or `adversaryforge <command>`
+after a clean install — see the note above).
+
 | Command | What it does |
 |---|---|
-| `adversaryforge campaign` | Orchestrator selects → Red Team executes → Judge evaluates → exploits stored |
-| `adversaryforge status` | Coverage per category, pass/fail rates, resilience trend, open findings, cost |
-| `adversaryforge seeds` | List the seed library with test-design roles (boundary/invariant/regression) |
-| `adversaryforge regress` | Re-run confirmed exploits; a pass means the invariant is genuinely no longer falsifiable |
-| `adversaryforge report` | (Re)generate professional vulnerability reports |
-| `adversaryforge trace [run_id]` | Render the fine-grained per-agent execution trace (span tree) for a run |
+| `campaign` | Orchestrator selects → Red Team executes → Judge evaluates → exploits stored |
+| `status` | Coverage per category, pass/fail rates, resilience trend, open findings, cost |
+| `seeds` | List the seed library with test-design roles (boundary/invariant/regression) |
+| `regress` | Re-run confirmed exploits; exits non-zero unless the fail-closed gate is GREEN |
+| `report` | (Re)generate professional vulnerability reports |
+| `trace [run_id]` | Render the fine-grained per-agent execution trace (span tree) for a run |
 
 ---
 
