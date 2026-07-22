@@ -61,7 +61,7 @@ def make_llm_adjudicator(settings):
 
     client = LLMClient(settings)
     model = settings.judge_model
-    meter = {"usd": 0.0}
+    meter = {"usd": 0.0, "in": 0, "out": 0}
 
     def adjudicate(view):
         # `view` is a JudgeView — transcript + invariant + expected_safe only.
@@ -79,6 +79,8 @@ def make_llm_adjudicator(settings):
             sp.update(input_tokens=_in, output_tokens=_out, usd=round(usd, 6),
                       response_preview=text[:100])
         meter["usd"] += usd
+        meter["in"] += _in
+        meter["out"] += _out
         parsed = _parse_verdict(text)
         if parsed is None:
             # Conservative fallback: low-confidence partial for human/LLM review.
@@ -89,8 +91,9 @@ def make_llm_adjudicator(settings):
             )
         return parsed
 
-    # Introspection hook for the cost governor (optional; ignored by the Judge).
+    # Introspection hooks for the cost governor (optional; ignored by the Judge).
     adjudicate.cost_usd = lambda: meter["usd"]
+    adjudicate.usage = lambda: (meter["in"], meter["out"], meter["usd"])
     return adjudicate
 
 

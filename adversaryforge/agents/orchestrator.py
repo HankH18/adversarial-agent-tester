@@ -49,6 +49,24 @@ class Orchestrator:
     def __init__(self, store: Store, library: SeedLibrary) -> None:
         self._store = store
         self._library = library
+        # Cumulative Judge-LLM usage already written to the cost ledger (so we log
+        # only the delta after each evaluation, never double-count).
+        self._judge_cost = {"usd": 0.0, "in": 0, "out": 0}
+
+    def _meter_judge_llm(self, judge: Judge, run_id: str) -> None:
+        """Write the Judge's LLM-adjudicator spend delta into the cost ledger, so
+        `status`, the cost analysis, and the cost governor all see real spend."""
+        adj = getattr(judge, "_llm", None)
+        usage = getattr(adj, "usage", None) if adj is not None else None
+        if usage is None:
+            return
+        in_t, out_t, usd = usage()
+        d_usd = usd - self._judge_cost["usd"]
+        if d_usd > 1e-9:
+            self._store.log_cost(run_id, "judge", "adjudicator",
+                                 in_t - self._judge_cost["in"],
+                                 out_t - self._judge_cost["out"], d_usd)
+            self._judge_cost = {"usd": usd, "in": in_t, "out": out_t}
 
     # ── deterministic target selection ─────────────────────────────────────
     def score_categories(self, *, authenticated: bool) -> list[tuple[str, float, str]]:
@@ -112,6 +130,7 @@ class Orchestrator:
             self._store.log_event(run_id, "redteam", "attempt", f"{seed.id} ({_enum(seed.category)})")
 
             verdict = judge.evaluate_attempt(attempt)  # info barrier applied inside
+            self._meter_judge_llm(judge, run_id)
             self._store.record_verdict(run_id, verdict)
             self._store.log_event(run_id, "judge", "verdict",
                                   f"{seed.id} -> {_enum(verdict.outcome)} ({_enum(verdict.severity)})")
@@ -136,13 +155,15 @@ class Orchestrator:
                    trigger="partial") as msp:
             self._store.log_event(run_id, "redteam", "mutate",
                                   f"{seed.id}: partial → generating {n} variants")
+            before_cost = getattr(mutator, "cost_usd", 0.0) or 0.0
             variants = await mutator.mutate(base_messages, seed.target_invariant,
                                             verdict.rationale, n=n)
             msp.set("variants_generated", len(variants))
-            cost = getattr(mutator, "cost_usd", 0.0) or 0.0
-            if cost:
+            # Log only THIS mutation's spend (cost_usd is cumulative on the mutator).
+            delta = (getattr(mutator, "cost_usd", 0.0) or 0.0) - before_cost
+            if delta > 1e-9:
                 self._store.log_cost(run_id, "redteam", getattr(mutator, "_model", "redteam"),
-                                     0, 0, cost)
+                                     0, 0, delta)
             breakthroughs = 0
             for i, variant in enumerate(variants):
                 with trace("redteam.variant", "redteam", index=i, generation=1) as vsp:
@@ -151,6 +172,7 @@ class Orchestrator:
                                                override_messages=variant)
                     self._store.record_attempt(run_id, child)
                     cv = judge.evaluate_attempt(child)
+                    self._meter_judge_llm(judge, run_id)
                     self._store.record_verdict(run_id, cv)
                     self._store.log_event(run_id, "judge", "verdict",
                                           f"{seed.id}#mut{i} → {_enum(cv.outcome)}")
