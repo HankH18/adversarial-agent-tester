@@ -32,6 +32,32 @@ BASE = "http://testserver"
 
 
 # ── pure decision core ──────────────────────────────────────────────────────
+def test_full_exploit_db_scan_meets_time_slo():
+    # SLO (Week_3 doc:498-501; ARCHITECTURE §7): a full scan of the exploit DB must
+    # complete within a defined time budget. Populate a realistic DB and MEASURE it.
+    # Budget is deliberately generous (SQLite enumerates hundreds of rows in <10ms),
+    # so this is a real regression guard on the scan cost, never a flaky timing test.
+    import tempfile
+    import time
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as d:
+        store = Store(Path(d) / "slo.sqlite")
+        for i in range(500):
+            store.record_exploit(ConfirmedExploit(
+                exploit_id=f"ex_{i}", attempt_id="at", verdict_id="vd",
+                category=AttackCategory.data_exfiltration, severity=Severity.high,
+                target_invariant="INV-AUTHZ-PATIENT",
+                minimal_transcript=[TranscriptTurn(role="attacker", content=f"probe-{i}")],
+                expected_safe="403", observed=f"leak-{i}"))
+        t0 = time.perf_counter()
+        rows = store.list_exploits()          # SELECT * FROM exploits — the full scan
+        elapsed = time.perf_counter() - t0
+        assert len(rows) == 500               # scan really enumerated the whole DB
+        assert elapsed < 2.0, f"full exploit-DB scan took {elapsed:.3f}s (budget 2.0s)"
+        store.close()
+
+
 def test_decide_failure_outcome_passes():
     d = _decide_case(seed_requires_auth=False, authenticated=False,
                      outcome=Outcome.failure, prev_status="open")

@@ -249,8 +249,8 @@ one-time human engagement or a flat list of strings can never be.
 | Platform capability (`ARCHITECTURE.md`) | AppSec | Co-Pilot Eng | CISO | ATO Reviewer |
 |---|:--:|:--:|:--:|:--:|
 | Independent Judge (transcript-only `JudgeView`, deterministic-first; different-family + κ-gate planned) — `§4.3` | ● | ● | ● | ● |
-| Mutation of partial attacks (Mutator + tree search) — `§4.2` | ● | | | |
-| Regression that means something (assertion re-run + N-replay stability) — `§7` | | ● | ● | ● |
+| Mutation of partial attacks (Mutator; tree search planned) — `§4.2` | ● | | | |
+| Regression that means something (assertion re-run; N-replay stability planned) — `§7` | | ● | ● | ● |
 | Deterministic-by-default (AI proposes, code disposes) — `§9` | | ● | ● | ● |
 | Cost governor (per-agent metering, no-signal halt) — `§10` | ● | | ● | |
 | Observability substrate (per-agent ordered trace, lineage) — `§11` | ● | ● | ● | ● |

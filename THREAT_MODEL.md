@@ -56,9 +56,10 @@ deterministic screen that protects the structured claims.
   most), but context-poisoning of the weak keyless retriever (#6) and parameter tampering on
   `rounds/*` remain worth continuous probing.
 
-**How the platform prioritizes coverage.** The Orchestrator scores each category every cycle by a
-deterministic function of *open-severity weight × coverage gap × recent yield × regression pressure −
-cost-per-finding* (ARCHITECTURE.md §6), with ε-greedy exploration so no seam goes blind. Because the
+**How the platform prioritizes coverage.** The Orchestrator today scores each category every cycle by
+*base threat weight + coverage-gap bonus + open-findings bonus − saturation penalty* and selects by
+argmax; the fuller cost-aware formula (adding recent-yield, regression-pressure, and cost-per-finding)
+and ε-greedy exploration are designed but deferred (ARCHITECTURE.md §6; AS_BUILT §1.1). Because the
 strong defenses are deterministic and the gaps are semantic/behavioral, the Judge is deterministic-first
 (branch on the target's `verification.action` field) and LLM-second only for prose-level leakage — the
 exact cases the target's own shape-scrub admits it misses. Every confirmed exploit freezes into a
@@ -348,8 +349,10 @@ against, cycle after cycle.
   `adapter.py:49`) and invokes an LLM only for the prose-leakage cases the target's shape-scrub admits it
   misses — exactly the §2.1 / §3.1 gaps.
 - **Prioritization (ARCHITECTURE.md §6).** Each cycle the Orchestrator computes a deterministic
-  `priority(c) = w_sev·open_severity + w_gap·coverage_gap + w_regress·recent_regression +
-  w_yield·recent_hit_rate − w_cost·cost_per_finding`, with ε-greedy exploration so no seam goes blind.
+  `score(c) = base_threat_weight + coverage_gap_bonus + open_findings_bonus − saturation_penalty` and
+  selects by argmax. The fuller cost-aware `priority(c) = … + w_regress·recent_regression +
+  w_yield·recent_hit_rate − w_cost·cost_per_finding` and ε-greedy exploration are designed but deferred
+  (AS_BUILT §1.1).
   Given this model, the standing priority order is **P0** indirect/multi-turn injection and cross-patient
   exfil, **P1** DoS/cost and identity, **P2** tool misuse and state corruption — reflecting where clinical
   blast radius meets an *admitted or confirmed* gap rather than a strong deterministic defense.

@@ -530,7 +530,7 @@ checklists (p.16).
 | **Test passes because behavior drifted, not fixed** | N-replay **stability check**; flip-to-green without a target code change | Mark **flaky**, not fixed; surface to operator; never counts toward "resolved" |
 | **A fixed vuln reappears** | replay flips a resolved case to red | `regression_detected` → Orchestrator schedules the category immediately |
 | **Fixing A breaks B** | full-suite replay after any fix | cross-category `regression_detected`; both findings tracked |
-| **Full scan misses its time SLO** | CI timing check | Alert; the SLO is verified in CI so a slowdown is caught before it hides a regression |
+| **Full scan misses its time SLO** | in-suite timing test (`test_full_exploit_db_scan_meets_time_slo`); CI gate deferred to MVP | A timing assertion measures the full-scan budget (< 2 s) in the test suite today; wiring it as a CI gate so a slowdown is caught automatically is planned |
 
 ### 4.5 Documentation failures
 

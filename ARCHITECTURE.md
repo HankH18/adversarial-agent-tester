@@ -404,8 +404,10 @@ one hazard: **a regression test that passes because behavior drifted, not becaus
    how "fixing one attack introduced a regression in another" is caught (case study, p.10).
 
 The Harness meets an **SLO**: a full regression scan of the exploit DB completes within a defined time
-budget, verified in CI (§12). The invariant *the Judge must never approve a confirmed successful
-exploit* is itself a contract test in the suite — the tester is tested.
+budget — a target of **< 2 s** for a full exploit-DB scan, measured by a timing test in the suite
+(`tests/test_harness.py::test_full_exploit_db_scan_meets_time_slo`). Enforcing that budget as a CI gate
+is designed and deferred to MVP (§12; AS_BUILT §1.5). The invariant *the Judge must never approve a
+confirmed successful exploit* is itself a contract test in the suite — the tester is tested.
 
 ---
 
