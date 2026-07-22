@@ -152,7 +152,7 @@ testing of systems their physicians depend on.*
    credentials with **no write scope**, egress-restricted to the target host and the model provider; the
    platform **never** calls the target's `/v1/writes*` routes (a design exclusion, not a togglable
    permission); and it is write-only against its *own* database, never the target (`§2` principle 3).
-2. They inspect the **human approval gates**: nothing critical or high-severity publishes without a
+2. They inspect the **human approval gates**: nothing critical publishes without a
    security engineer's sign-off; re-targeting to any host not on the human-owned allow-list is gated;
    budget overrides are a logged human decision (`§8`). Autonomy stops exactly at the blast radius.
 3. They review the **cost governor** (`§10`): per-agent, per-campaign metering with a no-signal halt, so

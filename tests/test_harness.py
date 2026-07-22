@@ -32,6 +32,38 @@ BASE = "http://testserver"
 
 
 # ── pure decision core ──────────────────────────────────────────────────────
+def test_regression_meter_judge_llm_logs_delta_not_cumulative(tmp_path):
+    # The regression path has its OWN _meter_judge_llm copy (separate from the
+    # Orchestrator's), and the hermetic suite forces no API key so its delta branch
+    # otherwise never runs. It must log per-call DELTAS, not cumulative totals —
+    # double-counting would corrupt keyed-regression cost accounting.
+    from adversaryforge.harness.regression import _meter_judge_llm
+
+    store = Store(tmp_path / "r.sqlite")
+    rid = store.start_run("http://t", "v", "test", False)
+    usage = {"v": (10, 5, 0.01)}
+
+    def _adj(view):
+        return None
+    _adj.usage = lambda: usage["v"]
+
+    class _Judge:
+        _llm = _adj
+
+    j = _Judge()
+    seen = {"usd": 0.0, "in": 0, "out": 0}          # same shape as regression.py:162
+    _meter_judge_llm(j, store, rid, seen)            # cumulative 0.01 -> log 0.01
+    usage["v"] = (25, 12, 0.03)
+    _meter_judge_llm(j, store, rid, seen)            # cumulative 0.03 -> log delta 0.02
+    _meter_judge_llm(j, store, rid, seen)            # no change -> log nothing
+
+    rows = store._conn.execute(
+        "SELECT usd, input_tokens, output_tokens FROM cost_ledger ORDER BY id").fetchall()
+    assert [round(r[0], 4) for r in rows] == [0.01, 0.02]      # deltas, not [0.01, 0.03]
+    assert [r[1] for r in rows] == [10, 15] and [r[2] for r in rows] == [5, 7]
+    store.close()
+
+
 def test_full_exploit_db_scan_meets_time_slo():
     # SLO (Week_3 doc:498-501; ARCHITECTURE §7): a full scan of the exploit DB must
     # complete within a defined time budget. Populate a realistic DB and MEASURE it.

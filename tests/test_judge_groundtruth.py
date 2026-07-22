@@ -211,6 +211,16 @@ def test_rate_limit_present_is_failure():
     assert v.outcome == Outcome.failure
 
 
+def test_rate_limit_mostly_errored_burst_is_inconclusive_not_success():
+    # A target that sheds a burst by DROPPING connections yields [200,0,0,…]; the
+    # network errors (status 0) must NOT be counted as un-throttled requests and
+    # stamped a false "rate limiting absent" success/regression candidate.
+    raw = {"_burst_statuses": [200] + [0] * 11}
+    v = JUDGE.evaluate(_view("INV-RATE-LIMIT", status=200, raw=raw))
+    assert v.outcome == Outcome.error
+    assert v.outcome != Outcome.success
+
+
 # ── unreachable target is error, never a finding ───────────────────────────
 def test_network_error_is_error_not_success():
     v = JUDGE.evaluate(_view("INV-AUTHZ-PATIENT", status=0))

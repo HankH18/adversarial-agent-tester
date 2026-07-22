@@ -6,14 +6,15 @@
 > inventory, the platform's own vulnerability-scan results, test evidence, a sample incident postmortem,
 > a control-attestation matrix, and a reviewer sign-off block.
 >
-> **Stage-4 status — this is a *skeleton*, and honestly labelled as one.** No platform code is built
-> yet. Sections that can be authored from the design *are* authored here in full (§1 identification, §2
-> architecture diagram, §3 data-flow diagram, §4 auth model, §5 dependency inventory, §8 sample
-> postmortem, §9 control attestations, §10 sign-off block). Sections whose evidence can only be produced
-> by a *running* platform (§6 platform self-scan, §7 test evidence) are present with a clearly-marked
-> **`⏳ POPULATED AT FINAL`** placeholder that states exactly what will fill them and how it will be
-> generated. A reviewer is asked to accept a truthful "not yet measured, here is the method" over a
-> fabricated result — nothing in §6 or §7 is invented.
+> **Status — the platform is now built** (see [`../AS_BUILT.md`](../AS_BUILT.md) for the as-built diff).
+> Sections authored from the design are complete (§1 identification, §2 architecture diagram, §3
+> data-flow diagram, §4 auth model, §5 dependency inventory, §8 sample postmortem, §9 control
+> attestations, §10 sign-off block). **§7 (test evidence) is populated from reproducible platform
+> output** — the eval, contract, and regression streams are real and reproducible from the CLI; only the
+> Cohen's-κ calibration row remains deferred and is marked as such, not fabricated. **§6 (platform
+> self-scan: Semgrep / pip-audit / SBOM) has not been run** and is a deferred item — the method is
+> stated and no result is invented. A reviewer is asked to accept a truthful "not yet measured, here is
+> the method" over a fabricated result — nothing in §6 or §7 is invented.
 >
 > **Companion artifacts (referenced, not duplicated):** the full architecture is
 > [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md); the interaction diagram, message schemas, trust
@@ -420,9 +421,10 @@ the same dependency set is the input to the CVE audit in §6.
 
 ## 6. Vulnerability scan results — the platform's own code
 
-**`⏳ POPULATED AT FINAL`** — this section requires a built platform and is intentionally not fabricated.
+**⚪ Deferred — not run.** The platform self-scan has not been executed; the method is stated below and
+no result is fabricated.
 
-**What will fill it.** Once platform code exists it is scanned against *itself*:
+**What will fill it.** The platform is scanned against *itself*:
 
 1. **SAST — Semgrep** over the platform's own Python (agents, contracts, harness, DB layer), using
    security rulesets plus any custom rules for the platform's own invariants (e.g. "no agent constructs a
@@ -442,15 +444,16 @@ validate/remediate/defer/document dispositions used in [`TRIAGE.md`](TRIAGE.md).
 | _Semgrep_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
 | _pip-audit / OSV_ | _CVE-pending_ | _dependency@version_ | _pending_ | _pending_ | _pending_ |
 
-> Reviewer note: at plan stage there is **no scan result to report**. Presenting an empty, method-defined
-> table is the honest state; a fabricated CVE or severity would invalidate the packet.
+> Reviewer note: the platform self-scan is **deferred and has not been run**, so there is **no scan
+> result to report**. Presenting an empty, method-defined table is the honest state; a fabricated CVE or
+> severity would invalidate the packet.
 
 ---
 
 ## 7. Test evidence (eval results)
 
-**`⏳ POPULATED AT FINAL`** — this section requires a running platform and its eval suite; it is
-intentionally not fabricated.
+**Populated from reproducible platform output.** The eval, contract, and regression streams below are
+real and reproducible from the CLI; only the Cohen's-κ calibration row is deferred (⚪), not fabricated.
 
 **What will fill it.** Four evidence streams, each already designed:
 
@@ -471,17 +474,18 @@ intentionally not fabricated.
 **How it will be generated.** The eval and contract suites run in CI on the Final build; the calibration
 gate runs at the head of each campaign; results are exported and tabled here.
 
-**Intended table columns (to be populated at Final):**
+**Evidence (reproducible from the CLI; run `adversaryforge status` / `regress` / `seeds` and the test suite):**
 
 | Evidence stream | Metric column(s) | Threshold / pass criterion | Result |
 |---|---|---|---|
-| `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | _pending_ |
-| Contract tests | schema · producer pass · consumer pass | 100% both sides | _pending_ |
-| Regression suite | case · replays passed / N · fixed / flaky / reappeared | fixed only if all-N hold | _pending_ |
-| Judge calibration | run · κ vs. gold · threshold | κ ≥ threshold (else fail-closed) | _pending_ |
+| `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | ✅ ≥ 3 categories exercised live (6 defined in `evals/`, 23 seeds); reproduce with `adversaryforge campaign` then `status` |
+| Contract tests | schema · producer pass · consumer pass | 100% both sides | ✅ producer + consumer pass — `contracts/` + `tests/test_contracts.py` |
+| Regression suite | case · replays passed / N · fixed / flaky / reappeared | fixed only if all-N hold | ✅ fail-closed gate runs live (`adversaryforge regress`); N-replay stability deferred — single-shot (AS_BUILT §1.5) |
+| Judge calibration | run · κ vs. gold · threshold | κ ≥ threshold (else fail-closed) | ⚪ deferred — per-run κ gate not built (AS_BUILT §1.3); anti-drift via the versioned deterministic ruleset + ground-truth test set |
 
-> Reviewer note: no eval has been run at plan stage. The method, thresholds, and columns are fixed now;
-> the numbers are produced only by execution and will not be invented.
+> Reviewer note: the platform is built and the eval / contract / regression streams are reproducible
+> from the CLI (see AS_BUILT.md). Only the Cohen's-κ calibration gate is deferred (⚪) and is never
+> fabricated.
 
 ---
 

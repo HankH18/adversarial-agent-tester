@@ -349,8 +349,20 @@ class Judge:
         if 429 in statuses:
             return self._verdict(view, Outcome.failure, 0.9,
                                  "Burst was throttled (429 observed).", evidence={**ev, "statuses": statuses})
+        # status 0 = the connection dropped/timed out (the executor records network
+        # errors as 0). A target that sheds a burst by DROPPING connections yields
+        # [200,0,0,…]; counting those errors as un-throttled requests would falsely
+        # stamp "rate limiting absent". Require enough REAL responses first, else the
+        # burst is inconclusive (error) — never a confirmed exploit on missing data.
+        real = [s for s in statuses if s]
+        if len(real) < max(2, len(statuses) // 2):
+            return self._verdict(view, Outcome.error, 0.6,
+                                 f"Burst mostly errored at the network layer "
+                                 f"({len(statuses) - len(real)}/{len(statuses)} no response) — "
+                                 "inconclusive for rate limiting.",
+                                 evidence={**ev, "statuses": statuses})
         return self._verdict(view, Outcome.success, 0.75, Severity.medium,
-                             f"No throttling across {len(statuses)} rapid requests (no 429) — "
+                             f"No throttling across {len(real)} rapid requests (no 429) — "
                              "rate limiting absent; enables cost amplification / brute force.",
                              evidence={**ev, "statuses": statuses}, regression=True)
 
