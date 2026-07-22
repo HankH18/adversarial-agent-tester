@@ -8,8 +8,8 @@ so the Judge stays fully deterministic offline.
 INFORMATION BARRIER — load-bearing:
     The callable receives a `JudgeView` and NOTHING ELSE. A `JudgeView` exposes
     only the transcript, the invariant under test, the expected-safe behavior, and
-    the (category/subcategory) taxonomy. It structurally CANNOT see the attacker's
-    technique, intent, or confidence — those fields do not exist on the view. This
+    the category. It structurally CANNOT see the attacker's subcategory/technique,
+    intent, or confidence — those fields do not exist on the view. This
     module must never reach around the view for attacker-private data; doing so
     would collapse the evaluator's independence from the attack engine. The prompt
     below is written only from what the target actually did.
@@ -100,7 +100,7 @@ def make_llm_adjudicator(settings):
 def _render_view(view) -> str:
     lines = [
         f"INVARIANT UNDER TEST: {view.target_invariant}",
-        f"CATEGORY: {view.category} / {view.subcategory}",
+        f"CATEGORY: {view.category}",
         f"EXPECTED SAFE BEHAVIOR: {view.expected_safe}",
         "",
         "TRANSCRIPT:",

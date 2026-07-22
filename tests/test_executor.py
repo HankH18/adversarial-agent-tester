@@ -69,6 +69,23 @@ async def test_upload_step_sends_multipart_not_json():
     assert b"SYSTEM OVERRIDE" in req.content  # the payload rode the file part
 
 
+async def test_burst_producer_fires_n_requests_and_records_statuses():
+    # Exercise the real _burst producer (not just the Judge's rate-limit consumer):
+    # it must fire burst_count requests and record the observed status set.
+    seed = Seed.model_validate({
+        "id": "dos", "category": "denial_of_service", "title": "t",
+        "target_invariant": "INV-RATE-LIMIT", "expected_safe": "x", "requires_auth": False,
+        "steps": [{"kind": "burst", "method": "GET", "path": "/health", "burst_count": 4}]})
+    with respx.mock(assert_all_called=False) as router:
+        route = router.get(f"{BASE}/health").mock(return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _settings()) as c:
+            attempt = await SeedExecutor(c).run(seed, directive_id="t")
+
+    assert route.call_count == 4
+    target_turn = [t for t in attempt.transcript if t.role == "target"][-1]
+    assert target_turn.raw["_burst_statuses"] == [200, 200, 200, 200]
+
+
 async def test_from_upload_dropped_when_nothing_captured():
     # Honesty: if no upload happened, the sentinel is dropped, not sent literally.
     seed = Seed.model_validate({

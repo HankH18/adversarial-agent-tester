@@ -199,8 +199,12 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
                                 "reappeared": False, "outcome": None, "rationale": None})
                 continue
 
-            # Replay the frozen sequence and re-adjudicate the invariant.
-            attempt = await executor.run(seed, directive_id="regression")
+            # Replay the frozen sequence and re-adjudicate the invariant. For a
+            # mutation-discovered case, replay the exact mutated payload that broke
+            # through (not the base seed), or the case can never re-detect the vuln.
+            overrides = (case.request or {}).get("override_messages")
+            attempt = await executor.run(seed, directive_id="regression",
+                                         override_messages=overrides)
             verdict = judge.evaluate_attempt(attempt)
             # Record into the store so the after-snapshot (and cross-category
             # detection) actually reflect this run. Attempt before verdict:

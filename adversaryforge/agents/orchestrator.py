@@ -181,7 +181,7 @@ class Orchestrator:
                         breakthroughs += 1
                         self._store.log_event(run_id, "redteam", "mutation_breakthrough",
                                               f"{seed.id}#mut{i} broke through after a partial")
-                        self._promote(seed, child, cv, run_id)
+                        self._promote(seed, child, cv, run_id, override_messages=variant)
             msp.set("breakthroughs", breakthroughs)
 
     @staticmethod
@@ -197,7 +197,8 @@ class Orchestrator:
                 return []
         return msgs
 
-    def _promote(self, seed: Seed, attempt: AttackAttempt, verdict: Verdict, run_id: str) -> None:
+    def _promote(self, seed: Seed, attempt: AttackAttempt, verdict: Verdict, run_id: str,
+                 override_messages: list[str] | None = None) -> None:
         exploit = ConfirmedExploit(
             exploit_id="ex_" + uuid.uuid4().hex[:12],
             attempt_id=attempt.attempt_id,
@@ -221,11 +222,17 @@ class Orchestrator:
         self._store.log_event(run_id, "judge", "exploit_confirmed",
                               f"{exploit.exploit_id} sev={_enum(verdict.severity)}")
         if seed.add_to_regression:
+            request: dict = {"seed_id": seed.id, "steps": [s.model_dump() for s in seed.steps]}
+            # For a mutation-discovered exploit, freeze the MUTATED payload that
+            # actually broke through — replaying the base seed (which was only a
+            # partial) would falsely report the vuln as fixed and never detect it.
+            if override_messages is not None:
+                request["override_messages"] = override_messages
             case = RegressionCandidate(
                 case_id="rc_" + uuid.uuid4().hex[:10],
                 exploit_id=exploit.exploit_id,
                 category=attempt.category,
-                request={"seed_id": seed.id, "steps": [s.model_dump() for s in seed.steps]},
+                request=request,
                 assertion={"kind": "invariant_holds", "invariant": attempt.target_invariant},
                 severity=verdict.severity,
             )

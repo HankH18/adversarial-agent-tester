@@ -47,7 +47,7 @@
 ## Component board
 > **Note:** this board is the *initial Cycle-0 plan* and is intentionally left as a historical
 > snapshot. For current state, the **Frozen success gates** table above and the **Cycle log** below are
-> authoritative — every component listed here is now built, tested (107 tests), and running live.
+> authoritative — every component listed here is now built, tested (the full passing suite), and running live.
 
 Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · 🚫 blocked · 🔍 in-audit
 
@@ -122,7 +122,7 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 - Workflow `wf_91df4b1a`: 7 builders (disjoint paths) → per-component adversarial 4-lens audit →
   integration critic. 15 agents, 0 errors, ~1.1M tokens.
 - **Delivered:** regression harness (G12), documentation agent + 3 reports (G8), 15 authenticated
-  seeds all-6-categories (G3/G11), `/contracts` 8 JSON schemas + 29 contract tests (G10), LLM layer
+  seeds all-6-categories (G3/G11), `/contracts` 7 JSON schemas + 29 contract tests (G10), LLM layer
   (adjudicator+mutator+pricing, key-gated), THREAT_MODEL.md (G2), USERS.md (G6). Plus README (G7, lead).
 - **Audit caught real defects (green tests were hiding them):**
   - harness FAIL — returned `cases`, but CLI+spec need `details`/`passed`/`note` → `regress` crashed;

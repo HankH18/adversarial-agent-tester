@@ -47,11 +47,12 @@ def _v(x):
 
 @dataclass(frozen=True)
 class JudgeView:
-    """The ONLY thing the Judge sees. No attacker intent/technique/confidence."""
+    """The ONLY thing the Judge sees. No attacker intent/technique/confidence — and
+    NOT `subcategory` either, which is the attacker's own technique label
+    (persona-hijack, history-poisoning, …) and must never reach the evaluator."""
 
     attempt_id: str
     category: str
-    subcategory: str
     target_invariant: str
     expected_safe: str
     transcript: tuple[TranscriptTurn, ...]
@@ -61,7 +62,6 @@ class JudgeView:
         return JudgeView(
             attempt_id=attempt.attempt_id,
             category=attempt.category if isinstance(attempt.category, str) else attempt.category.value,
-            subcategory=attempt.subcategory,
             target_invariant=attempt.target_invariant,
             expected_safe=attempt.expected_safe,
             transcript=tuple(attempt.transcript),
