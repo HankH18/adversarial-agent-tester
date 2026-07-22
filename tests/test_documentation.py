@@ -239,3 +239,27 @@ def test_generate_all_reports_empty_db_never_wipes_committed_reports(tmp_path):
 
     assert count == 0
     assert committed.exists()  # committed report preserved on an empty DB
+
+
+def test_generate_all_reports_all_invalid_exploits_does_not_wipe(tmp_path):
+    # Rows exist but every one fails the data-quality gate -> nothing to rebuild.
+    # Must NOT delete the committed reports it cannot regenerate.
+    settings = _reports_dir_settings(tmp_path)
+    store = Store(settings.db_path)
+    assert store.record_exploit(_exploit(observed="")) is True  # invalid: empty observed
+    store.close()
+
+    import adversaryforge.agents.documentation as doc
+    original = doc._REPORTS_DIR
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    committed = reports_dir / "VULN-committed0.md"
+    committed.write_text("a committed report", encoding="utf-8")
+    doc._REPORTS_DIR = reports_dir
+    try:
+        count = generate_all_reports(settings=settings)
+    finally:
+        doc._REPORTS_DIR = original
+
+    assert count == 0
+    assert committed.exists()  # all-invalid must not wipe committed reports

@@ -45,6 +45,10 @@
 | G14 | Multi-agent system actually runs a campaign end-to-end | Platform req | ✅ campaign+regress+report all run live |
 
 ## Component board
+> **Note:** this board is the *initial Cycle-0 plan* and is intentionally left as a historical
+> snapshot. For current state, the **Frozen success gates** table above and the **Cycle log** below are
+> authoritative — every component listed here is now built, tested (107 tests), and running live.
+
 Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · 🚫 blocked · 🔍 in-audit
 
 | Component | Path | State | Notes |

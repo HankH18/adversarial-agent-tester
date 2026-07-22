@@ -141,10 +141,21 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
     async with TargetClient(adapter, session, settings) as client:
         version = await _target_version(client)
+        # A non-empty cookie is not the same as a LIVE session. If the configured
+        # cookie is expired/invalid, every authed request 401s, which the Judge maps
+        # to "defense held" -> a false "fix confirmed". Probe liveness and downgrade a
+        # dead session to unauthenticated so its cases SKIP rather than green on drift.
+        session_downgraded = False
+        if authed and not await _session_live(client):
+            authed = False
+            session_downgraded = True
         run_id = store.start_run(
             settings.target_base_url, version, "regression", authed,
             notes=f"regression cases={len(cases)}",
         )
+        if session_downgraded:
+            store.log_event(run_id, "harness", "session_expired",
+                            "configured cookie rejected by the target; authed cases skipped")
 
         executor = SeedExecutor(client)
         _trace_token = bind_tracer(Tracer(store, run_id) if settings.trace_enabled else None)
@@ -191,6 +202,11 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
             # Replay the frozen sequence and re-adjudicate the invariant.
             attempt = await executor.run(seed, directive_id="regression")
             verdict = judge.evaluate_attempt(attempt)
+            # Record into the store so the after-snapshot (and cross-category
+            # detection) actually reflect this run. Attempt before verdict:
+            # record_verdict/passfail join on attempt_id.
+            store.record_attempt(run_id, attempt)
+            store.record_verdict(run_id, verdict)
             _meter_judge_llm(judge, store, run_id, _judge_seen)  # LLM spend -> cost ledger
             outcome = verdict.outcome
 
@@ -267,6 +283,15 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
         "details": cli_details,  # CLI/consumer contract
         "cases": details,        # rich internal rows
     }
+
+
+async def _session_live(client) -> bool:
+    """True only if the configured session is one the target actually accepts."""
+    try:
+        resp = await client.request("GET", "/v1/auth/me")
+    except Exception:
+        return False
+    return resp.status_code == 200
 
 
 def _meter_judge_llm(judge, store, run_id: str, seen: dict) -> None:

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Report ID | `VULN-93f678eb88` |
-| Exploit ID | `ex_7be2c3dcee24` |
+| Report ID | `VULN-64e3b7c7c3` |
+| Exploit ID | `ex_d7c755c4b5f6` |
 | Severity | **MEDIUM** |
 | Category | Denial of Service |
 | Status | published |
@@ -31,7 +31,7 @@ The endpoint accepts unbounded request volume from a single session. Against a c
 **3.** Observe the target's response (HTTP 200):
 
 ```
-burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in 216ms
+burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in 214ms
 ```
 
 **4.** Confirm the observed behavior below is present (and differs from the expected safe behavior). The finding reproduces when it is.

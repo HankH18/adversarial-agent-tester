@@ -106,6 +106,10 @@ def regress():
     for row in result["details"]:
         mark = _marks.get(row.get("result", ""), "✅" if row["passed"] else "❌")
         console.print(f"  {mark} {row['case_id']} [{row['category']}] {row['note']}")
+    # Exit non-zero when the fail-closed gate is not GREEN, so a CI merge gate
+    # actually blocks (any failed/errored/reappeared case).
+    if not result.get("all_passed"):
+        raise typer.Exit(1)
 
 
 @app.command()

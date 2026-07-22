@@ -3,8 +3,9 @@
 > **Audience: a hospital CISO deciding whether to trust this platform to continuously test a system
 > physicians depend on.** `ARCHITECTURE.md` is the *plan*. This document is the *honest diff* between
 > that plan and the code that actually runs today. Where the two disagree, this file is the truth about
-> the code, and it names every gap rather than papering over it. Every claim below is cited to a file
-> and an approximate line so you can check it yourself.
+> the code, and it names every gap rather than papering over it. Every claim below cites the **file and
+> the named symbol** (function/method/class); the line numbers are approximate and may drift between
+> commits — **grep the named symbol** if a cited line has moved. The symbol is the canonical anchor.
 >
 > **How to verify this document (2 minutes)** — run from the repo root after
 > `uv pip install -e '.[dev]'`. The `python -m` form is cwd-independent and always resolves the
