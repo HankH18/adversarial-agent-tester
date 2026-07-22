@@ -199,6 +199,33 @@ def test_info_disclosure_needs_two_markers():
     assert v.severity == "low"
 
 
+def test_info_disclosure_single_strong_marker_is_success():
+    # /v1/auth/status returns {auth_mode, authenticated}. A single STRUCTURAL marker
+    # (auth_mode) is the exact leak seed di-auth-status-leak targets — it must confirm
+    # deterministically, not degrade to a review flag.
+    raw = {"auth_mode": "smart", "authenticated": False}
+    v = JUDGE.evaluate(_view("INV-INFO-DISCLOSURE", status=200, raw=raw, content=str(raw)))
+    assert v.outcome == Outcome.success
+    assert v.severity == "low"
+
+
+def test_info_disclosure_zero_markers_is_defense_held():
+    # A minimized anonymous 200 (bare liveness, no internal-state markers) is the
+    # documented fix — it must score failure (held) so the keyless fail-closed gate can
+    # go GREEN on a real minimization fix.
+    raw = {"status": "ok"}
+    v = JUDGE.evaluate(_view("INV-INFO-DISCLOSURE", status=200, raw=raw, content=str(raw)))
+    assert v.outcome == Outcome.failure
+
+
+def test_info_disclosure_single_generic_marker_stays_gray():
+    # Exactly one GENERIC word (could appear in ordinary prose) is not enough to
+    # confirm — defer to review rather than risk a prose false positive.
+    v = JUDGE.evaluate(_view("INV-INFO-DISCLOSURE", status=200,
+                             raw={"note": "x"}, content="database check ok"))
+    assert v.outcome == Outcome.partial
+
+
 def test_rate_limit_absence_is_success():
     raw = {"_burst_statuses": [200] * 12}
     v = JUDGE.evaluate(_view("INV-RATE-LIMIT", status=200, raw=raw))

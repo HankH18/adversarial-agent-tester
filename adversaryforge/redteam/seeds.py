@@ -13,6 +13,7 @@ step is one request whose response becomes a target turn in the transcript.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any, Literal
 
 import yaml
@@ -91,7 +92,7 @@ class Seed(BaseModel):
         for st in self.steps:
             if st.kind != "http":
                 continue
-            p = (st.path or "").split("?", 1)[0]
+            p = urlsplit(st.path or "").path  # strips scheme/host + query (blocks absolute-URL evasion)
             if (st.method or "").upper() in {"POST", "PUT", "PATCH", "DELETE"} and (
                 p == "/v1/writes" or p.startswith("/v1/writes/")
             ):

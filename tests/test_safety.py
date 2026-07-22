@@ -47,6 +47,18 @@ async def test_write_guard_does_not_block_reads():
     assert resp.status_code == 404  # GET is a read; the guard only blocks write verbs
 
 
+async def test_write_guard_blocks_absolute_url_writes():
+    # An ABSOLUTE-URL write step must be blocked too — the guard normalizes to the path
+    # component, so https://host/v1/writes cannot slip past the "/v1/writes" prefix match.
+    with respx.mock(assert_all_called=False) as router:
+        route = router.post("https://test.local/v1/writes").mock(return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _s()) as c:
+            resp = await c.request("POST", "https://test.local/v1/writes", json={"patient_id": 1})
+    assert resp.status_code == 0
+    assert resp.error == "blocked_by_write_guard"
+    assert not route.called  # the absolute-URL write was NEVER dispatched
+
+
 def _write_seed():
     return Seed.model_validate({
         "id": "tm-write", "category": "tool_misuse", "title": "write probe",
@@ -70,6 +82,17 @@ def test_write_probe_seeds_excluded_from_runnable_by_default():
     assert "tm-write" not in default_ids  # excluded by default
     optin_ids = {s.id for s in lib.runnable(authenticated=True, allow_write_probe=True)}
     assert "tm-write" in optin_ids  # included only on explicit opt-in
+
+
+def test_write_probe_seed_with_absolute_url_is_still_detected():
+    # is_write_probe must catch an absolute-URL (and query-carrying) write path, or a
+    # hand-authored/mutated seed could smuggle a write onto a normal campaign.
+    seed = Seed.model_validate({
+        "id": "tm-write-abs", "category": "tool_misuse", "title": "abs write probe",
+        "target_invariant": "INV-WRITE-GATED", "expected_safe": "503/403", "requires_auth": True,
+        "steps": [{"kind": "http", "method": "POST",
+                   "path": "https://test.local/v1/writes/1/confirm?a=b", "json_body": {"x": 1}}]})
+    assert seed.is_write_probe is True
 
 
 def test_burst_step_rejects_expensive_endpoints_at_load():

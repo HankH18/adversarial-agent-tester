@@ -17,6 +17,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -99,7 +100,10 @@ class TargetClient:
             return False
         if method.upper() not in self._WRITE_METHODS:
             return False
-        p = (path or "").split("?", 1)[0]
+        # Normalize to the path component: urlsplit strips scheme+host (so an
+        # ABSOLUTE-URL step like https://host/v1/writes can't slip past the prefix
+        # match) and the query/fragment.
+        p = urlsplit(path or "").path
         return p == "/v1/writes" or p.startswith("/v1/writes/")
 
     async def _pace(self) -> None:

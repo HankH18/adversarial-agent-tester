@@ -13,8 +13,14 @@ tokens, standard/non-introductory, so the cost governor never under-counts):
 | Model (role) | Input $/Mtok | Output $/Mtok |
 | --- | --- | --- |
 | `claude-opus-4-8` — Judge adjudicator (`judge_model`) | 5.00 | 25.00 |
-| `claude-sonnet-5` — Red Team mutator & Doc enrichment (`redteam_model`, `doc_model`) | 3.00 | 15.00 |
+| `nousresearch/hermes-4-405b` — **default** Red Team mutator, via OpenRouter (`openrouter_redteam_model`) | 0.90 | 0.90 |
+| `claude-sonnet-5` — mutator **Anthropic-only fallback** & Doc enrichment (`redteam_model`, `doc_model`) | 3.00 | 15.00 |
 | `claude-haiku-4-5` — cheaper high-volume mutation (10K+) | 1.00 | 5.00 |
+
+> **The quantitative model below prices mutation at the Sonnet-5 fallback rate as a conservative upper
+> bound.** The *shipped default* routes the mutator (the highest-volume role) to Hermes-4-405B via
+> OpenRouter at $0.90/$0.90 per Mtok — ~13× cheaper than Sonnet per call — so real spend on the default
+> path is below every figure here, which only strengthens the sub-linear thesis.
 
 ---
 
@@ -76,7 +82,7 @@ linear in token-count:
 | Role | When it fires | Model | Calls |
 | --- | --- | --- | --- |
 | **Judge adjudicator** (`llm/judge_llm.py`) | Only when the deterministic rule engine returns `None` (semantically-ambiguous: e.g. `200` + withheld answer, or an un-dispatched invariant). `Judge.evaluate()` calls the LLM *only* on that fall-through. | Opus-4-8 | 1 per ambiguous attempt |
-| **Red Team mutator** (`llm/mutator.py`) | Only on a `partial` verdict **and** a message-bearing seed (`Orchestrator._mutate_and_run`). Produces **all N variants in a single call** (`max_tokens=2048`), not N calls. | Sonnet-5 | 1 per mutated partial |
+| **Red Team mutator** (`llm/mutator.py`) | Only on a `partial` verdict **and** a message-bearing seed (`Orchestrator._mutate_and_run`). Produces **all N variants in a single call** (`max_tokens=2048`), not N calls. | **Hermes-4-405B** (default, via OpenRouter) / Sonnet-5 fallback | 1 per mutated partial |
 | **Documentation enrichment** (`agents/documentation.py`) | Optional prose-sharpening pass, once per **confirmed** exploit. Currently a no-op hook (no `enrich_report` is wired), so today it is $0; modeled here as the production-enabled case. | Sonnet-5 | ≤1 per confirmed exploit |
 
 Target selection, rationale templating, report *structure*, reproduction steps,
@@ -177,12 +183,14 @@ Volume now collides with provider limits and Opus cost.
 ### 100,000 runs — self-host the attacker, scale storage, shard, spot compute
 At six figures the per-token API bill for mutation dominates, and SQLite is the
 bottleneck.
-- **Self-host the attacker model.** Point `redteam_model` at a locally-hosted open
-  model. Mutation is the highest-frequency LLM call (fires on every partial and is the
-  costliest per-call at Sonnet rates); moving it off the metered API removes that
-  entire line from the marginal cost — this is where the naive $1,600 collapses.
-  Keep the **Judge on hosted Opus** — adjudication is lower-frequency and independence/
-  quality of the evaluator is worth more than its cost.
+- **Self-host / off-Anthropic attacker model — already the default.** The shipped
+  default already routes the mutator (the highest-frequency LLM call) to an open-weight
+  model off Anthropic — Hermes-4-405B via OpenRouter at $0.90/$0.90 per Mtok — so the
+  costliest naive line (mutation at Sonnet rates) is **largely pre-realized**, not a
+  future step; the remaining lever at six figures is fully self-hosting that same open
+  model to drop the per-token API bill to compute-only. Keep the **Judge on hosted
+  Opus** — adjudication is lower-frequency and the evaluator's independence/quality is
+  worth more than its cost.
 - **DB / storage scaling.** Migrate `Store` from SQLite to Postgres and index the hot
   paths (`attempts`, `verdicts`, `exploits`, `cost_ledger`) so `coverage_by_category()`,
   `passfail_rates()`, and `cost_summary()` stay cheap as the tables grow to millions

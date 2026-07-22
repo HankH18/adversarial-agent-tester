@@ -5,9 +5,13 @@
 > failure modes**. This is the artifact a reviewer accepts as proof the architecture in
 > [`ARCHITECTURE.md`](../../ARCHITECTURE.md) is real and typed — not a sketch.
 >
-> **Scope note (Stage 4):** this is a *design* packet. The JSON Schemas below are the authoritative
-> shapes; at build time they are published verbatim as files in `/contracts/*.v1.schema.json` and
-> exercised by contract tests on both the producing and consuming side. No platform code is built yet.
+> **Scope note:** the platform is built. The **authoritative, machine-readable schemas are the on-disk
+> files `/contracts/*.v1.schema.json`** — exported from the Pydantic models by
+> `scripts/export_contracts.py` and enforced on both the producing and consuming side by
+> `tests/test_contracts.py` (a drift guard fails the suite if a model and its published schema disagree).
+> The JSON blocks in §2 below are an **illustrative earlier design sketch that predates the frozen
+> contracts** and differ from them in envelope and field names; where they differ, the `/contracts` files
+> govern. Run `cat contracts/*.v1.schema.json` for the canonical shapes.
 
 ---
 
@@ -113,10 +117,17 @@ sequenceDiagram
 
 ## 2. Message schemas (`/contracts`, v1)
 
-Authoritative shapes for every inter-agent boundary in `ARCHITECTURE.md §5`. Draft 2020-12 JSON Schema.
-Common conventions: every message carries `schema_version` (const `"1.0.0"`), a `message_id` (uuid), a
-`campaign_id`, and a `created_at` (ISO-8601). Enums are closed (`"additionalProperties": false`) so an
-unknown field is a contract violation, not silently ignored.
+Every inter-agent boundary in `ARCHITECTURE.md §5` is a versioned Draft 2020-12 JSON Schema. **The
+canonical schemas are the on-disk `/contracts/*.v1.schema.json` files** — 7 of them (CampaignDirective,
+AttackAttempt, Verdict, ConfirmedExploit, RegressionCandidate, VulnReport, AgentError) — each with
+`$id: https://adversaryforge/contracts/<name>/v1`, a top-level `"version": "v1"`, a `schema_version`
+default of `"v1"`, and closed objects (`"additionalProperties": false`, so an unknown field is a
+contract violation). `AttackCategory` is the real 6-value enum (`prompt_injection`, `data_exfiltration`,
+`state_corruption`, `tool_misuse`, `denial_of_service`, `identity_role`).
+
+> The JSON blocks below are the **illustrative earlier sketch** referenced in the scope note (different
+> envelope: `message_id`/`campaign_id`/`created_at`, `schema_version` const `"1.0.0"`, a wider enum).
+> The `/contracts` files — enforced by `tests/test_contracts.py` — are authoritative wherever they differ.
 
 ### 2.1 `CampaignDirective` — Orchestrator → Red Team
 

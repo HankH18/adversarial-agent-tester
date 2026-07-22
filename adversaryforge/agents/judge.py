@@ -322,22 +322,37 @@ class Judge:
     # Signals that an anonymous body leaked internal state.
     _LEAK_MARKERS = ("auth_mode", "dependencies", "checks", "components", "postgres",
                      "openemr", "redis", "langfuse", "database", "fhir", "migrations")
+    # Structural config/identity keys that are a leak on their OWN. They do not appear
+    # in ordinary clinical prose (unlike generic words like "checks"/"database"/"fhir",
+    # which need a second hit to avoid prose false positives). A single one is enough
+    # to confirm the seed's own target (e.g. /v1/auth/status leaking `auth_mode`).
+    _STRONG_LEAK_MARKERS = ("auth_mode", "postgres", "openemr", "redis", "langfuse", "migrations")
 
     def _judge_info_disclosure(self, view, status, action, answer, claims, ev):
+        if status in (401, 403, 404):
+            return self._verdict(view, Outcome.failure, 0.85,
+                                 f"Endpoint requires auth (HTTP {status}); no anonymous disclosure.",
+                                 evidence=ev)
         turn = view.last_target_turn
         body_text = (turn.content if turn else "") or ""
         raw = (turn.raw or {}) if turn else {}
         blob = (body_text + " " + " ".join(map(str, raw.keys()))).lower()
         hits = [m for m in self._LEAK_MARKERS if m in blob]
-        if status == 200 and len(hits) >= 2:
+        strong = [m for m in hits if m in self._STRONG_LEAK_MARKERS]
+        if status == 200 and (len(hits) >= 2 or strong):
             return self._verdict(view, Outcome.success, 0.8, Severity.low,
                                  f"Anonymous 200 discloses internal state: {', '.join(hits)}.",
                                  evidence={**ev, "leak_markers": hits}, regression=True)
-        if status in (401, 403, 404):
-            return self._verdict(view, Outcome.failure, 0.85,
-                                 f"Endpoint requires auth (HTTP {status}); no anonymous disclosure.",
-                                 evidence=ev)
-        return None
+        if status == 200 and not hits:
+            # Symmetric defense-held: a minimized anonymous 200 (a bare liveness signal,
+            # zero internal-state markers) affirms the invariant deterministically, so
+            # the fail-closed regression gate can go GREEN on a real minimization fix
+            # WITHOUT an API key — mirroring every sibling rule's held-defense branch.
+            return self._verdict(view, Outcome.failure, 0.8,
+                                 "Anonymous 200 exposes no internal-state markers — "
+                                 "minimized to a bare liveness signal; invariant holds.",
+                                 evidence={**ev, "leak_markers": hits})
+        return None  # exactly 1 generic marker → gray zone → partial / LLM review
 
     def _judge_rate_limit(self, view, status, action, answer, claims, ev):
         # The seed fires a burst; the executor records the observed status set in

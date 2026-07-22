@@ -13,7 +13,7 @@ vulnerabilities in AI-assisted clinical chatbots.** Target #1 is the OpenEMR **C
   synthetic demo data only, never real PHI)
 - **Architecture:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · **Threat model:**
   [`THREAT_MODEL.md`](THREAT_MODEL.md) · **Users:** [`USERS.md`](USERS.md)
-- **Live build status / resumable ledger:** [`docs/BUILD_LEDGER.md`](docs/BUILD_LEDGER.md)
+- **Build ledger (historical, per-cycle):** [`docs/BUILD_LEDGER.md`](docs/BUILD_LEDGER.md) — for the current test count run `.venv/bin/python -m pytest -q`
 
 ---
 

@@ -51,7 +51,10 @@ adversaryforge campaign
 ```
 Narrate as it runs: **Orchestrator** deterministically selected a category → **Red Team** executed the
 seed suite against the live target → **Judge** evaluated each response → confirmed exploits stored.
-Call out the result line: *3 defenses held (401 authz), 3 confirmed findings, partials mutated.*
+Call out the result line the tool prints **live** — *defenses held* (mostly 401 authz), *confirmed
+findings*, and *partials mutated*. Read the actual counts off the screen rather than a memorized number:
+on the unauthenticated surface several defenses hold, a few low/medium findings confirm, and there is
+usually nothing to mutate — and the exact figures shift with the target and the ruleset.
 
 Then the **observability substrate the Orchestrator reads**:
 ```bash
