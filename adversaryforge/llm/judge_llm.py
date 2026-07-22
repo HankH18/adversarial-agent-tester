@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 
 from adversaryforge.contracts import Outcome
+from adversaryforge.observability.tracing import trace
 
 from .client import LLMClient
 
@@ -65,13 +66,18 @@ def make_llm_adjudicator(settings):
     def adjudicate(view):
         # `view` is a JudgeView — transcript + invariant + expected_safe only.
         user = _render_view(view)
-        try:
-            text, _in, _out, usd = client.complete(
-                _SYSTEM, user, model=model, max_tokens=512
-            )
-        except Exception:
-            # Target of adjudication is a second opinion; never crash the Judge.
-            return None
+        with trace("llm.call", "judge", role="adjudicator", model=model,
+                   max_tokens=512, invariant=view.target_invariant) as sp:
+            try:
+                text, _in, _out, usd = client.complete(
+                    _SYSTEM, user, model=model, max_tokens=512
+                )
+            except Exception as exc:
+                # A second opinion; never crash the Judge.
+                sp.error(str(exc))
+                return None
+            sp.update(input_tokens=_in, output_tokens=_out, usd=round(usd, 6),
+                      response_preview=text[:100])
         meter["usd"] += usd
         parsed = _parse_verdict(text)
         if parsed is None:

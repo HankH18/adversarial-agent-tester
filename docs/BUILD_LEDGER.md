@@ -70,6 +70,18 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 | Cost analysis | `docs/COST_ANALYSIS.md` | ⬜ | G9 |
 
 ## Cycle log
+### Cycle 4 — fine-grained execution tracing (lead) ✅ DONE
+- Built a contextvar-linked span tracer (`observability/tracing.py`) + a `spans` table (schema v3,
+  auto-migrates) recording nested spans *inside* each agent, with timing + attributes:
+  `orchestrator.run_seed` → `target.request` (method/path/status/latency) → `judge.evaluate` →
+  **`judge.rule`** (which invariant rule fired, the signals it read, its sub-verdict + rationale);
+  plus `redteam.mutate`/`redteam.variant` on the mutation path and `llm.call` spans (model/tokens/USD/
+  response preview) that populate when an API key is present.
+- Non-invasive (tracer in a ContextVar → deep code calls `trace()` with no signature changes),
+  zero-cost when off (`ADVERSARYFORGE_TRACE`, default on), async-safe, never breaks a run.
+- Bound in campaign + regression; `adversaryforge trace [run_id]` renders the span tree. +4 tests (86 total).
+- Verified live: a campaign emits ~32 spans across 3 agents with real per-rule Judge timing.
+
 ### Cycle 3 — cost analysis, perf baseline, as-built reconciliation (3 builders) ✅ DONE
 - Workflow `wf_fcf53241`: COST_ANALYSIS.md (G9), a load/baseline perf harness + PERFORMANCE_BASELINE.md,
   and AS_BUILT.md — each pipelined into an audit + integration critic. 7 agents, 0 errors.

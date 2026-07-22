@@ -14,6 +14,7 @@ from adversaryforge.agents.orchestrator import Orchestrator
 from adversaryforge.config import Settings, get_settings
 from adversaryforge.contracts import Outcome
 from adversaryforge.observability.store import Store
+from adversaryforge.observability.tracing import Tracer, use_tracer
 from adversaryforge.redteam.executor import SeedExecutor
 from adversaryforge.redteam.seeds import Seed, SeedLibrary
 from adversaryforge.target.adapter import agentforge_adapter
@@ -117,26 +118,28 @@ async def run_campaign(
         mutations_run = 0
         halted = False
         exploits_before = _count_exploits(store)
-        for seed in runnable:
-            _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
-                                             executor, judge, run_id,
-                                             mutator=mutator, n_variants=n_variants)
-            out = _enum(verdict.outcome)
-            by_outcome[out] = by_outcome.get(out, 0) + 1
-            if verdict.outcome == Outcome.success:
-                successes += 1
-            elif verdict.outcome == Outcome.partial and mutator is not None:
-                mutations_run += 1
+        tracer = Tracer(store, run_id) if settings.trace_enabled else None
+        with use_tracer(tracer):
+            for seed in runnable:
+                _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
+                                                 executor, judge, run_id,
+                                                 mutator=mutator, n_variants=n_variants)
+                out = _enum(verdict.outcome)
+                by_outcome[out] = by_outcome.get(out, 0) + 1
+                if verdict.outcome == Outcome.success:
+                    successes += 1
+                elif verdict.outcome == Outcome.partial and mutator is not None:
+                    mutations_run += 1
 
-            # Cost governor: stop burning budget once it produces no signal.
-            spent = store.cost_summary(run_id)["usd"]
-            confirmed = _count_exploits(store) - exploits_before
-            if should_halt_no_signal(spent, settings.nosignal_halt_usd, confirmed):
-                store.log_event(run_id, "orchestrator", "cost_halt",
-                                f"no-signal halt: ${spent:.4f} >= budget "
-                                f"${settings.nosignal_halt_usd:.2f}, 0 confirmed exploits")
-                halted = True
-                break
+                # Cost governor: stop burning budget once it produces no signal.
+                spent = store.cost_summary(run_id)["usd"]
+                confirmed = _count_exploits(store) - exploits_before
+                if should_halt_no_signal(spent, settings.nosignal_halt_usd, confirmed):
+                    store.log_event(run_id, "orchestrator", "cost_halt",
+                                    f"no-signal halt: ${spent:.4f} >= budget "
+                                    f"${settings.nosignal_halt_usd:.2f}, 0 confirmed exploits")
+                    halted = True
+                    break
 
         cost = store.cost_summary(run_id)["usd"]
         store.end_run(run_id, cost)

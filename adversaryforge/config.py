@@ -53,6 +53,11 @@ class Settings(BaseSettings):
         default=2.0, validation_alias="ADVERSARYFORGE_NOSIGNAL_HALT_USD"
     )
 
+    # --- Execution tracing -------------------------------------------------
+    # Fine-grained per-agent span tracing to the observability store. Low
+    # overhead; on by default. Set 0/false to disable.
+    trace_enabled: bool = Field(default=True, validation_alias="ADVERSARYFORGE_TRACE")
+
     # --- Storage -----------------------------------------------------------
     data_dir: Path = Field(default=_REPO_ROOT / "data", validation_alias="ADVERSARYFORGE_DATA_DIR")
 

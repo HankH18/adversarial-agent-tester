@@ -46,6 +46,7 @@ from adversaryforge.agents.judge import Judge
 from adversaryforge.config import Settings, get_settings
 from adversaryforge.contracts import Outcome
 from adversaryforge.observability.store import Store
+from adversaryforge.observability.tracing import Tracer, bind_tracer, unbind_tracer
 from adversaryforge.platform import build_llm_adjudicator
 from adversaryforge.redteam.executor import SeedExecutor
 from adversaryforge.redteam.seeds import SeedLibrary
@@ -141,6 +142,7 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
         )
 
         executor = SeedExecutor(client)
+        _trace_token = bind_tracer(Tracer(store, run_id) if settings.trace_enabled else None)
 
         for case in cases:
             seed_id = (case.request or {}).get("seed_id")
@@ -216,6 +218,7 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
             details.append(row)
 
+        unbind_tracer(_trace_token)
         store.end_run(run_id, store.cost_summary(run_id)["usd"])
 
     # CLI-contract view: the published shape the caller (cli.regress) and any

@@ -75,6 +75,7 @@ cp .env.example .env      # then edit — see "Authentication & keys" below
 | `adversaryforge seeds` | List the seed library with test-design roles (boundary/invariant/regression) |
 | `adversaryforge regress` | Re-run confirmed exploits; a pass means the invariant is genuinely no longer falsifiable |
 | `adversaryforge report` | (Re)generate professional vulnerability reports |
+| `adversaryforge trace [run_id]` | Render the fine-grained per-agent execution trace (span tree) for a run |
 
 ---
 

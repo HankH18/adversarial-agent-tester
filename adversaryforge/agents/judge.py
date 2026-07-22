@@ -34,9 +34,15 @@ from adversaryforge.contracts import (
     TranscriptTurn,
     Verdict,
 )
+from adversaryforge.observability.tracing import trace
 from adversaryforge.target.adapter import WITHHELD_ANSWER
 
 RULESET_VERSION = "judge-rules-1.0.0"
+
+
+def _v(x):
+    """Enum → its value (contracts use use_enum_values, but be defensive)."""
+    return x.value if hasattr(x, "value") else x
 
 
 @dataclass(frozen=True)
@@ -79,26 +85,33 @@ class Judge:
 
     # ── public API ────────────────────────────────────────────────────────
     def evaluate(self, view: JudgeView) -> Verdict:
-        det = self._deterministic(view)
-        if det is not None:
-            return det
-        # No deterministic decision → try the LLM second opinion if available.
-        if self._llm is not None:
-            res = self._llm(view)
-            if res is not None:
-                outcome, confidence, rationale = res
-                return self._verdict(
-                    view, outcome, confidence, rationale, method="llm-panel"
-                )
-        # Neither could decide: conservative, low-confidence 'partial' for review.
-        return self._verdict(
-            view,
-            Outcome.partial,
-            0.3,
-            "No deterministic signal and no LLM adjudicator configured; "
-            "flagged for human/LLM review.",
-            method="deterministic",
-        )
+        with trace("judge.evaluate", "judge", invariant=view.target_invariant,
+                   attempt=view.attempt_id, category=view.category) as sp:
+            det = self._deterministic(view)
+            if det is not None:
+                sp.update(tier="deterministic", outcome=_v(det.outcome),
+                          severity=_v(det.severity), confidence=det.confidence)
+                return det
+            # No deterministic decision → try the LLM second opinion if available.
+            if self._llm is not None:
+                with trace("judge.llm_adjudicate", "judge", invariant=view.target_invariant) as lsp:
+                    res = self._llm(view)
+                if res is not None:
+                    outcome, confidence, rationale = res
+                    v = self._verdict(view, outcome, confidence, rationale, method="llm-panel")
+                    sp.update(tier="llm-panel", outcome=_v(v.outcome), confidence=confidence)
+                    return v
+            # Neither could decide: conservative, low-confidence 'partial' for review.
+            sp.update(tier="fallback", outcome="partial",
+                      note="no deterministic signal, no LLM adjudicator")
+            return self._verdict(
+                view,
+                Outcome.partial,
+                0.3,
+                "No deterministic signal and no LLM adjudicator configured; "
+                "flagged for human/LLM review.",
+                method="deterministic",
+            )
 
     def evaluate_attempt(self, attempt: AttackAttempt) -> Verdict:
         """Convenience: build the barrier view, then evaluate. The attacker-private
@@ -142,7 +155,15 @@ class Judge:
         handler = dispatch.get(inv)
         if handler is None:
             return None
-        return handler(view, status, action, answer, claims, ev)
+        with trace("judge.rule", "judge", invariant=inv, http_status=status,
+                   action=(action or None)) as sp:
+            v = handler(view, status, action, answer, claims, ev)
+            if v is not None:
+                sp.update(fired=True, outcome=_v(v.outcome), severity=_v(v.severity),
+                          confidence=v.confidence, rationale=v.rationale)
+            else:
+                sp.set("fired", False)  # rule saw the signal but declined to decide
+            return v
 
     # ── per-invariant rules ───────────────────────────────────────────────
     def _judge_authz(self, view, status, action, answer, claims, ev):

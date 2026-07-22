@@ -28,6 +28,7 @@ from adversaryforge.contracts import (
     Verdict,
 )
 from adversaryforge.observability.store import Store
+from adversaryforge.observability.tracing import trace
 from adversaryforge.redteam.executor import SeedExecutor
 from adversaryforge.redteam.seeds import Seed, SeedLibrary
 from adversaryforge.target.adapter import TargetAdapter
@@ -104,50 +105,62 @@ class Orchestrator:
         self, seed: Seed, directive: CampaignDirective, executor: SeedExecutor,
         judge: Judge, run_id: str, mutator=None, n_variants: int = 8,
     ) -> tuple[AttackAttempt, Verdict]:
-        attempt = await executor.run(seed, directive.directive_id)
-        self._store.record_attempt(run_id, attempt)
-        self._store.log_event(run_id, "redteam", "attempt", f"{seed.id} ({_enum(seed.category)})")
+        with trace("orchestrator.run_seed", "orchestrator", seed=seed.id,
+                   category=_enum(seed.category), invariant=seed.target_invariant) as sp:
+            attempt = await executor.run(seed, directive.directive_id)
+            self._store.record_attempt(run_id, attempt)
+            self._store.log_event(run_id, "redteam", "attempt", f"{seed.id} ({_enum(seed.category)})")
 
-        verdict = judge.evaluate_attempt(attempt)  # info barrier applied inside
-        self._store.record_verdict(run_id, verdict)
-        self._store.log_event(run_id, "judge", "verdict",
-                              f"{seed.id} -> {_enum(verdict.outcome)} ({_enum(verdict.severity)})")
+            verdict = judge.evaluate_attempt(attempt)  # info barrier applied inside
+            self._store.record_verdict(run_id, verdict)
+            self._store.log_event(run_id, "judge", "verdict",
+                                  f"{seed.id} -> {_enum(verdict.outcome)} ({_enum(verdict.severity)})")
+            sp.update(outcome=_enum(verdict.outcome), severity=_enum(verdict.severity),
+                      method=verdict.method)
 
-        if verdict.outcome == Outcome.success:
-            self._promote(seed, attempt, verdict, run_id)
-        elif verdict.outcome == Outcome.partial and mutator is not None:
-            # A partial is a foothold: autonomously generate N variants to probe for
-            # a version that breaks through (the case study's core Red Team behavior).
-            await self._mutate_and_run(seed, attempt, verdict, directive, executor,
-                                       judge, run_id, mutator, n_variants)
-        return attempt, verdict
+            if verdict.outcome == Outcome.success:
+                self._promote(seed, attempt, verdict, run_id)
+            elif verdict.outcome == Outcome.partial and mutator is not None:
+                # A partial is a foothold: autonomously generate N variants to probe
+                # for a version that breaks through (the core Red Team behavior).
+                await self._mutate_and_run(seed, attempt, verdict, directive, executor,
+                                           judge, run_id, mutator, n_variants)
+            return attempt, verdict
 
     async def _mutate_and_run(self, seed, parent, verdict, directive, executor,
                               judge, run_id, mutator, n) -> None:
         base_messages = self._seed_messages(seed)
         if not base_messages:
             return  # nothing message-bearing to mutate (e.g. pure HTTP probe)
-        self._store.log_event(run_id, "redteam", "mutate",
-                              f"{seed.id}: partial → generating {n} variants")
-        variants = await mutator.mutate(base_messages, seed.target_invariant,
-                                        verdict.rationale, n=n)
-        cost = getattr(mutator, "cost_usd", 0.0) or 0.0
-        if cost:
-            self._store.log_cost(run_id, "redteam", getattr(mutator, "_model", "redteam"),
-                                 0, 0, cost)
-        for i, variant in enumerate(variants):
-            child = await executor.run(seed, directive.directive_id, generation=1,
-                                       parent_attempt_id=parent.attempt_id,
-                                       override_messages=variant)
-            self._store.record_attempt(run_id, child)
-            cv = judge.evaluate_attempt(child)
-            self._store.record_verdict(run_id, cv)
-            self._store.log_event(run_id, "judge", "verdict",
-                                  f"{seed.id}#mut{i} → {_enum(cv.outcome)}")
-            if cv.outcome == Outcome.success:
-                self._store.log_event(run_id, "redteam", "mutation_breakthrough",
-                                      f"{seed.id}#mut{i} broke through after a partial")
-                self._promote(seed, child, cv, run_id)
+        with trace("redteam.mutate", "redteam", seed=seed.id, n=n,
+                   trigger="partial") as msp:
+            self._store.log_event(run_id, "redteam", "mutate",
+                                  f"{seed.id}: partial → generating {n} variants")
+            variants = await mutator.mutate(base_messages, seed.target_invariant,
+                                            verdict.rationale, n=n)
+            msp.set("variants_generated", len(variants))
+            cost = getattr(mutator, "cost_usd", 0.0) or 0.0
+            if cost:
+                self._store.log_cost(run_id, "redteam", getattr(mutator, "_model", "redteam"),
+                                     0, 0, cost)
+            breakthroughs = 0
+            for i, variant in enumerate(variants):
+                with trace("redteam.variant", "redteam", index=i, generation=1) as vsp:
+                    child = await executor.run(seed, directive.directive_id, generation=1,
+                                               parent_attempt_id=parent.attempt_id,
+                                               override_messages=variant)
+                    self._store.record_attempt(run_id, child)
+                    cv = judge.evaluate_attempt(child)
+                    self._store.record_verdict(run_id, cv)
+                    self._store.log_event(run_id, "judge", "verdict",
+                                          f"{seed.id}#mut{i} → {_enum(cv.outcome)}")
+                    vsp.set("outcome", _enum(cv.outcome))
+                    if cv.outcome == Outcome.success:
+                        breakthroughs += 1
+                        self._store.log_event(run_id, "redteam", "mutation_breakthrough",
+                                              f"{seed.id}#mut{i} broke through after a partial")
+                        self._promote(seed, child, cv, run_id)
+            msp.set("breakthroughs", breakthroughs)
 
     @staticmethod
     def _seed_messages(seed: Seed) -> list[str]:

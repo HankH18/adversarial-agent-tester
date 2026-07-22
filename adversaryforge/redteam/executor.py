@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 from adversaryforge.contracts import AttackAttempt, TranscriptTurn
+from adversaryforge.observability.tracing import trace
 from adversaryforge.redteam.seeds import Seed, Step
 from adversaryforge.target.client import TargetClient, TargetResponse
 
@@ -38,7 +39,11 @@ class SeedExecutor:
                 transcript.append(TranscriptTurn(
                     role="attacker",
                     content=f"[burst x{step.burst_count}] {step.method} {step.path}"))
-                transcript.append(await self._burst(step))
+                with trace("target.burst", "redteam", path=step.path,
+                           count=step.burst_count) as bsp:
+                    turn = await self._burst(step)
+                    bsp.set("statuses", (turn.raw or {}).get("_burst_statuses"))
+                transcript.append(turn)
                 step_convos.append(None)
                 continue
 
@@ -47,8 +52,13 @@ class SeedExecutor:
             attacker_content = self._attacker_summary(step, body, msg_override, files)
             transcript.append(TranscriptTurn(role="attacker", content=attacker_content))
 
-            resp = await self._client.request(
-                method, path, json=body, headers=headers, params=params, files=files, data=data)
+            with trace("target.request", "redteam", step=i, method=method, path=path) as tsp:
+                resp = await self._client.request(
+                    method, path, json=body, headers=headers, params=params,
+                    files=files, data=data)
+                tsp.update(status=resp.status_code, latency_ms=round(resp.latency_ms, 1))
+                if resp.error:
+                    tsp.error(resp.error)
             transcript.append(self._target_turn(resp))
             step_convos.append(self._extract_conversation_id(resp))
             doc_id = self._extract_document_id(resp)

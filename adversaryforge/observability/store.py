@@ -29,7 +29,7 @@ from adversaryforge.contracts import (
     VulnReport,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _now() -> str:
@@ -169,6 +169,20 @@ class Store:
                 usd REAL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS spans (
+                span_id TEXT PRIMARY KEY,
+                run_id TEXT,
+                parent_span_id TEXT,
+                seq INTEGER,
+                agent TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT DEFAULT 'ok',
+                start_ts TEXT NOT NULL,
+                end_ts TEXT,
+                duration_ms REAL,
+                attrs TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS ix_attempts_cat ON attempts(category);
             CREATE INDEX IF NOT EXISTS ix_attempts_run ON attempts(run_id);
             CREATE INDEX IF NOT EXISTS ix_verdicts_outcome ON verdicts(outcome, severity);
@@ -178,6 +192,8 @@ class Store:
             CREATE INDEX IF NOT EXISTS ix_exploits_status ON exploits(status);
             CREATE UNIQUE INDEX IF NOT EXISTS ux_exploits_dedupe ON exploits(dedupe_key);
             CREATE INDEX IF NOT EXISTS ix_events_run ON events(run_id, event_id);
+            CREATE INDEX IF NOT EXISTS ix_spans_run ON spans(run_id, seq);
+            CREATE INDEX IF NOT EXISTS ix_spans_parent ON spans(parent_span_id);
             """
         )
         c.execute(
@@ -284,6 +300,32 @@ class Store:
                 " VALUES(?,?,?,?,?,?,?)",
                 (run_id, _now(), agent, model, input_tokens, output_tokens, usd),
             )
+
+    def record_span(self, span: dict[str, Any]) -> None:
+        """Persist one execution-trace span (see observability.tracing)."""
+        with self._tx() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO spans(span_id,run_id,parent_span_id,seq,agent,name,"
+                "status,start_ts,end_ts,duration_ms,attrs) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (span["span_id"], span.get("run_id"), span.get("parent_span_id"),
+                 span.get("seq"), span["agent"], span["name"], span.get("status", "ok"),
+                 span["start_ts"], span.get("end_ts"), span.get("duration_ms"),
+                 _dumps(span.get("attrs", {}))),
+            )
+
+    def get_spans(self, run_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM spans WHERE run_id=? ORDER BY seq", (run_id,)
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["attrs"] = json.loads(d["attrs"]) if d["attrs"] else {}
+            except Exception:
+                d["attrs"] = {}
+            out.append(d)
+        return out
 
     # ── reads (the observability questions) ────────────────────────────────
     def coverage_by_category(self) -> dict[str, int]:

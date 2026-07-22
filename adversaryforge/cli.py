@@ -119,5 +119,26 @@ def report():
                   f"in reports/")
 
 
+@app.command()
+def trace(run_id: str = typer.Argument("", help="Run id (default: the most recent run).")):
+    """Render the fine-grained per-agent execution trace (span tree) for a run."""
+    from adversaryforge.observability.tracing import render_tree
+
+    store = Store(get_settings().db_path)
+    if not run_id:
+        row = store._conn.execute(  # noqa: SLF001
+            "SELECT run_id FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
+        run_id = row["run_id"] if row else ""
+    spans = store.get_spans(run_id) if run_id else []
+    if not spans:
+        console.print(f"[yellow]No spans for run '{run_id}'[/yellow] — tracing disabled, "
+                      "no runs yet, or wrong id.")
+        raise typer.Exit(1)
+    console.print(f"[bold]Execution trace — {run_id}[/bold]  "
+                  f"({len(spans)} spans across {len({s['agent'] for s in spans})} agents)")
+    for line in render_tree(spans):
+        console.print(line)
+
+
 if __name__ == "__main__":
     app()

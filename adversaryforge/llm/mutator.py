@@ -22,6 +22,8 @@ import asyncio
 import base64
 import json
 
+from adversaryforge.observability.tracing import trace
+
 from .client import LLMClient
 
 _SYSTEM = """You are an offensive red-team payload mutator for an adversarial \
@@ -77,10 +79,15 @@ class Mutator:
                 _SYSTEM, user, model=self._model, max_tokens=2048
             )
 
-        try:
-            text, _in, _out, usd = await asyncio.to_thread(_call)
-        except Exception:
-            return []  # -> caller falls back to deterministic
+        with trace("llm.call", "redteam", role="mutator", model=self._model,
+                   max_tokens=2048, prompt_chars=len(user)) as sp:
+            try:
+                text, _in, _out, usd = await asyncio.to_thread(_call)
+            except Exception as exc:
+                sp.error(str(exc))
+                return []  # -> caller falls back to deterministic
+            sp.update(input_tokens=_in, output_tokens=_out, usd=round(usd, 6),
+                      response_preview=text[:100])
         self.cost_usd += usd
 
         variants = _parse_variants(text, n)
