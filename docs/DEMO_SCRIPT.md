@@ -73,6 +73,17 @@ Narrate: each confirmed exploit was frozen into a replayable case. Re-running re
 **fail-closed**: a dead/errored target is *inconclusive*, never a false "fixed." Right now the 3
 findings are still open → gate NOT GREEN (correct).
 
+## 5b. Deterministic-first, LLM-second — visible in one trace (~30s — strong beat)
+```bash
+adversaryforge trace          # renders the last run's per-agent span tree
+```
+Point at two `judge.evaluate` spans side by side: most say **`tier=deterministic` (~0.3ms)** — pure
+code decided them; the one the deterministic rules *couldn't* settle escalated to
+**`tier=llm-panel → judge.llm_adjudicate → llm.call model=claude-opus-4-8` (~2s)**. That is the whole
+"AI only where it's irreducible" thesis in a single screen — and `status` shows the exact USD/tokens
+that one call cost. The trace also shows every `target.request` (method/path/status/latency) and, per
+Judge decision, the exact `judge.rule` that fired with its rationale.
+
 ## 6. The adaptive Red Team (~30s — the differentiator)
 Show `adversaryforge seeds` (23 seeds, 6 categories, boundary/invariant/regression roles). Explain the
 **mutation loop**: when the Judge returns *partial*, the Red Team autonomously generates N variants of
