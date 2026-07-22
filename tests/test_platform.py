@@ -110,3 +110,35 @@ async def test_run_campaign_exploits_new_is_a_delta(tmp_path, monkeypatch):
         result = await plat.run_campaign(settings=st, limit=1)
 
     assert result.exploits_new == 1  # only the one added this run, not the pre-existing
+
+
+def test_meter_judge_llm_logs_delta_not_cumulative(tmp_path):
+    # The Judge adjudicator cost is cumulative; the meter must log per-call DELTAS
+    # into the ledger (double-counting would corrupt the cost governor + analysis).
+    from adversaryforge.agents.orchestrator import Orchestrator
+    from adversaryforge.redteam.seeds import SeedLibrary
+
+    store = Store(tmp_path / "t.sqlite")
+    rid = store.start_run("http://t", "v", "test", False)
+    orch = Orchestrator(store, SeedLibrary(seeds=[]))
+
+    usage = {"v": (10, 5, 0.01)}
+
+    def _adj(view):  # a callable carrying a cumulative .usage(), like make_llm_adjudicator
+        return None
+    _adj.usage = lambda: usage["v"]
+
+    class _Judge:
+        _llm = _adj
+
+    j = _Judge()
+    orch._meter_judge_llm(j, rid)          # first: cumulative 0.01 -> log 0.01
+    usage["v"] = (25, 12, 0.03)
+    orch._meter_judge_llm(j, rid)          # second: cumulative 0.03 -> log delta 0.02
+    orch._meter_judge_llm(j, rid)          # third: no change -> log nothing
+
+    rows = store._conn.execute(
+        "SELECT usd, input_tokens, output_tokens FROM cost_ledger ORDER BY id").fetchall()
+    assert [round(r[0], 4) for r in rows] == [0.01, 0.02]      # deltas, not [0.01, 0.03]
+    assert [r[1] for r in rows] == [10, 15] and [r[2] for r in rows] == [5, 7]
+    store.close()

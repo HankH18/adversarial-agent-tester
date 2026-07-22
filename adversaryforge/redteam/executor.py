@@ -30,7 +30,22 @@ class SeedExecutor:
         step_convos: list[int | None] = []
         captured_doc_ids: list[str] = []  # document ids returned by prior upload steps
 
-        for i, step in enumerate(seed.steps):
+        # A mutation variant may be LONGER than the seed (e.g. a "split across turns"
+        # transform). Grow the step list to match, synthesizing conversation-threaded
+        # chat turns from the last chat step, so extra turns actually execute instead
+        # of being silently truncated. (All-chat seeds only — guaranteed by the
+        # orchestrator, which mutates only message-bearing chat seeds.)
+        steps = list(seed.steps)
+        if (override_messages is not None and len(override_messages) > len(steps)
+                and steps and steps[-1].kind == "chat"):
+            template = steps[-1]
+            for extra_i in range(len(steps), len(override_messages)):
+                steps.append(template.model_copy(update={
+                    "message": None,                      # supplied via override_messages
+                    "conversation_id_from_step": extra_i - 1,  # thread the conversation
+                }))
+
+        for i, step in enumerate(steps):
             msg_override = None
             if override_messages is not None and i < len(override_messages):
                 msg_override = override_messages[i]

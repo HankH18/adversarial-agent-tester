@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adversaryforge.contracts import AttackCategory, OwaspLlm, OwaspWeb
 
@@ -46,6 +46,18 @@ class Step(BaseModel):
         "to thread into this turn (multi-turn state).",
     )
     document_ids: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _burst_only_hits_cheap_liveness_endpoints(self) -> "Step":
+        # Structural guarantee (fails at seed-load, not mid-campaign): a burst may
+        # only target the cheap liveness endpoints, so a seed-author mistake can
+        # never turn the rate-limit probe into a real DoS of an expensive route.
+        if self.kind == "burst" and self.path not in ("/health", "/ready"):
+            raise ValueError(
+                f"burst steps may only target /health or /ready, not {self.path!r}"
+            )
+        return self
+
     upload_file: dict[str, str] | None = Field(
         default=None,
         description="For a multipart upload step: {filename, content_type, text}. The executor "
@@ -72,6 +84,20 @@ class Seed(BaseModel):
     steps: list[Step] = Field(min_length=1)
     owasp_web: list[OwaspWeb] = Field(default_factory=list)
     owasp_llm: list[OwaspLlm] = Field(default_factory=list)
+    @property
+    def is_write_probe(self) -> bool:
+        """True if any step issues a write verb to the target's /v1/writes* routes.
+        Such seeds are excluded from campaigns unless the operator opts in."""
+        for st in self.steps:
+            if st.kind != "http":
+                continue
+            p = (st.path or "").split("?", 1)[0]
+            if (st.method or "").upper() in {"POST", "PUT", "PATCH", "DELETE"} and (
+                p == "/v1/writes" or p.startswith("/v1/writes/")
+            ):
+                return True
+        return False
+
     add_to_regression: bool = True
     requires_auth: bool = Field(
         default=True,
@@ -108,10 +134,20 @@ class SeedLibrary(BaseModel):
     def categories(self) -> set[str]:
         return {_enum(s.category) for s in self.seeds}
 
-    def runnable(self, *, authenticated: bool) -> list[Seed]:
+    def runnable(self, *, authenticated: bool, allow_write_probe: bool | None = None) -> list[Seed]:
         """Seeds we can execute now. Unauthenticated seeds always; authenticated
-        seeds only when a session is configured."""
-        return [s for s in self.seeds if authenticated or not s.requires_auth]
+        seeds only when a session is configured; **write-probe seeds only when the
+        operator opts in** (default off) so the platform stays read-only against the
+        target. `allow_write_probe=None` reads the setting."""
+        if allow_write_probe is None:
+            from adversaryforge.config import get_settings
+
+            allow_write_probe = get_settings().allow_write_probe
+        return [
+            s for s in self.seeds
+            if (authenticated or not s.requires_auth)
+            and (allow_write_probe or not s.is_write_probe)
+        ]
 
 
 def _enum(v: Any) -> str:

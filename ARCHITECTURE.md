@@ -81,9 +81,13 @@ These are the invariants every later decision is checked against.
    use AI only where the task is irreducibly generative (novel attacks) or semantic (did the prose
    leak PHI?). Everything a CISO needs to trust — scoring, replay, coverage math, cost accounting — is
    deterministic code. See §9.
-3. **Autonomy is bounded by blast radius.** The platform is *read-mostly against the target and
-   write-only against itself.* It never issues a write/confirm to the target's `/v1/writes*` routes. It
-   writes only to its own exploit DB. Human gates sit at publication and at re-targeting (§8).
+3. **Autonomy is bounded by blast radius.** The platform is *read-only against the target and
+   write-only against itself* — **self-enforced**: a client-side default-deny guard refuses any
+   POST/PUT/PATCH/DELETE to `/v1/writes*` at the HTTP layer, and write-path seeds are excluded from
+   campaigns, unless the operator explicitly opts in (`ADVERSARYFORGE_ALLOW_WRITE_PROBE=1`). The opt-in
+   sends a single harmless probe expecting a `503/403` to *verify the target's own write-gate*
+   (INV-WRITE-GATED); no write is ever committed. It writes only to its own exploit DB. Human gates sit
+   at publication and at re-targeting (§8).
 4. **A passing regression test must mean the vulnerability is fixed — not that behavior drifted.** A
    test that goes green because the model changed its mind is worse than no test (case study, p.10). §7
    defines how we distinguish the two.
@@ -413,7 +417,7 @@ Autonomy is deliberately bounded. Here is **where the system stops and asks a hu
 |---|---|---|
 | **Publish critical/high finding** | Documentation Agent, before a critical or high-severity `VulnReport` is published | An agent that confidently files a false-positive critical wastes scarce security-engineering time and erodes trust in the platform (case study, p.9). A human confirms severity and clinical impact before it enters the record of truth. Medium/low/informational publish autonomously — the cost of a wrong low is small and the volume is high. |
 | **Re-target to a new host** | Orchestrator, before any campaign points at a URL not on the authorized allow-list | Prevents the platform being turned against systems it must not attack (case study, p.16). The target allow-list is human-owned config; adding to it is an explicit, logged human action. |
-| **Enable target writes** | Hard-disabled, no gate — the platform **never** calls the target's `/v1/writes*` routes | The blast radius of an autonomous write to a clinical record is unacceptable regardless of approval. This is a design exclusion, not a permission. |
+| **Enable target writes** | **Default-deny, self-enforced** — a client-side guard blocks any write verb to `/v1/writes*` and write-path seeds are excluded from campaigns; verifying the target's write-gate is an explicit operator opt-in (`ADVERSARYFORGE_ALLOW_WRITE_PROBE=1`) that sends one harmless probe expecting `503/403` and never commits a write | The blast radius of an autonomous write to a clinical record is unacceptable; the platform enforces read-only itself rather than trusting the target's feature flag. |
 | **Judge-uncertain escalation** | Judge, when confidence is low or the panel splits | The Judge escalates a genuinely ambiguous verdict to a human rather than guessing, preventing both silent false-negatives and false-positive report spam. |
 | **Budget-ceiling override** | Cost Governor, when an operator wants to exceed a campaign ceiling | Spend above the configured ceiling is a human decision, logged. |
 
@@ -590,12 +594,11 @@ LangGraph. Framework for orchestration; schema for the contract.
 *Required section. Every AI-powered role, the deterministic verification or human gate that follows it,
 and the residual risk.*
 
-> **As-built note (deviation from this plan):** the table below describes the *designed* model tiers.
-> The shipped MVP runs **Claude for both the Red Team and the Judge LLM tiers** (only Anthropic keys
-> were available); the planned Hermes-via-OpenRouter attacker and the "different model family"
-> independence leg are config-switchable but **not active as shipped**. This narrows the structural
-> independence to the information barrier + deterministic-first tiers (both real and tested). See
-> [`docs/AS_BUILT.md §3`](docs/AS_BUILT.md) and residual risk **R2** for the full honest state.
+> **As-built note:** as shipped, when `OPENROUTER_API_KEY` is set the **Red Team attacker/mutator runs
+> on Hermes 4 405B (Meta-Llama family) via OpenRouter** while the **Judge runs on Claude** — the planned
+> *different model family* independence is **active**, verified by a live call. If OpenRouter is absent
+> the attacker falls back to Claude and independence rests on the information barrier + deterministic-first
+> tiers (both real and tested). See [`docs/AS_BUILT.md §3`](docs/AS_BUILT.md) / residual risk **R2**.
 
 | AI-powered role | Model | Deterministic check / human gate that follows | Residual risk |
 |---|---|---|---|

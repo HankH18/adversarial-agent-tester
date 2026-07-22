@@ -56,7 +56,7 @@ still open, whether a fix actually held, and whether closing one hole opened ano
 |---|---|---|
 | **Compute** | The platform's own agents and deterministic subsystems running on the operator's dev host (Apple M1 Max / 32 GB) and the local Ollama runtime | Any third-party compute except the named external APIs below |
 | **Targets** | **Exactly one** authorized target: the Clinical Co-Pilot at `https://agentforge.hankholcomb.com`, on a human-owned allow-list. Read/interact-only. | Any host not on the allow-list. Re-targeting is a human-gated, logged action ([`ARCHITECTURE.md §8`](../../ARCHITECTURE.md)). |
-| **Target actions** | HTTP **reads and chat interactions** against the target's published endpoints | The target's `/v1/writes*` routes — a **hard design exclusion**, never called, no approval path exists (§4) |
+| **Target actions** | HTTP **reads and chat interactions** against the target's published endpoints | Writes to `/v1/writes*` are **default-deny, blocked client-side**; reachable only as a single harmless gated probe under the explicit `ADVERSARYFORGE_ALLOW_WRITE_PROBE` opt-in, never committing a write (§4) |
 | **External services** | Anthropic Claude API (Judge / Documentation / Orchestrator-rationale); the tracing backend (Langfuse SaaS *or* self-hosted OTEL collector) | Any external service not enumerated in §5 |
 | **Data stores** | The platform's own exploit DB (SQLite → Postgres) and its trace sink | The target's system of record (OpenEMR) — read-only via the API only, never direct DB access |
 
@@ -331,11 +331,15 @@ the rate-limit and egress-fence details.
 
 ### 4.1 Two design exclusions called out explicitly
 
-1. **The platform NEVER holds a target write credential.** No agent has target write scope; the
-   target's `/v1/writes*` routes are a **hard design exclusion with no approval path**, not a gated
-   permission. The Red Team's session deliberately carries **no write scope even though** the target's
-   write routes are disabled by default — defense in depth, so a target misconfiguration cannot combine
-   with an autonomous attacker to mutate a clinical record ([`ARCHITECTURE.md §8`](../../ARCHITECTURE.md)).
+1. **Read-only against the target by default — self-enforced.** No agent holds a target write
+   credential, and the platform enforces read-only *itself*: a **client-side default-deny guard**
+   (`target/client.py:TargetClient._is_blocked_write`) refuses any POST/PUT/PATCH/DELETE to
+   `/v1/writes*` at the HTTP layer, and write-path seeds are excluded from every campaign
+   (`seeds.py:runnable`), unless the operator explicitly sets `ADVERSARYFORGE_ALLOW_WRITE_PROBE=1`. Even
+   then the opt-in sends a **single harmless probe expecting a `503/403`** to verify the target's own
+   write-gate (INV-WRITE-GATED) — no write is ever committed. This is genuine defense in depth on the
+   platform side, so a target misconfiguration cannot combine with an autonomous attacker to mutate a
+   clinical record ([`ARCHITECTURE.md §8`](../../ARCHITECTURE.md)).
 2. **The Red Team NEVER reaches the exploit DB.** The untrusted attacker has **no read and no write path**
    to the platform's own data store. A compromise of the untrusted attacker therefore cannot escalate to
    writing a report, writing to the target, or corrupting the exploit DB
@@ -520,7 +524,7 @@ and the critical/high human gate would have caught any that did.
 
 #### Impact
 
-- **External:** none. No write ever reaches the target (design exclusion, §4); no report was published.
+- **External:** none. No write reaches the target — writes are default-deny (client-side guard + write-seed exclusion), and this run did not use the `ALLOW_WRITE_PROBE` opt-in (§4); no report was published.
 - **Internal:** one campaign's worth of prose-tier verdicts marked *suspect* and excluded; ~3h of
   overnight campaign time lost to the halt-and-quarantine. Deterministic-tier verdicts in the same window
   were unaffected (they do not depend on the drifted model).
@@ -575,7 +579,7 @@ Each key control, its description, where it is defined in the design, and its st
 | **Judge independence** | Attacker and Judge are different agents, **different model families**, with an information barrier (Judge sees the transcript, never the attacker's intent/label/confidence) | [`ARCHITECTURE.md §4.3`](../../ARCHITECTURE.md); [`EVIDENCE_PACKET.md §2.2, §3`](EVIDENCE_PACKET.md) | **Designed** |
 | **Judge calibration / drift gate** | Per-run **Cohen's κ** against a frozen gold set; κ below threshold **fails the run closed**; verdict-distribution-shift monitor as secondary | [`ARCHITECTURE.md §4.3, §13`](../../ARCHITECTURE.md); §8 (postmortem) | **Designed**; κ results at Final (§7) |
 | **Human approval gates** | Critical/high `VulnReport` publishes only behind a person; re-targeting to a new host requires a human-owned allow-list entry | [`ARCHITECTURE.md §8`](../../ARCHITECTURE.md); [`EVIDENCE_PACKET.md §3`](EVIDENCE_PACKET.md) | **Designed** |
-| **Target write exclusion** | The platform holds **no** target write credential; `/v1/writes*` is a hard design exclusion with no approval path | [`ARCHITECTURE.md §8`](../../ARCHITECTURE.md); §4.1 | **Designed** |
+| **Target write exclusion** | Read-only by default, **self-enforced**: client-side default-deny guard on `/v1/writes*` + write-seed exclusion; write-gate probe only under explicit `ALLOW_WRITE_PROBE` opt-in, never commits | [`ARCHITECTURE.md §8`](../../ARCHITECTURE.md); §4.1 | **Built + tested** |
 | **Attacker isolation from the exploit DB** | The untrusted Red Team has **no read/write path** to the platform's own data store | [`EVIDENCE_PACKET.md §3`](EVIDENCE_PACKET.md); §4.1 | **Designed** |
 | **PHI pseudonymization** | Raw target PHI never enters platform traces; pseudonymize/scrub at the trace egress; **fail-closed drop** if the key is unset | [`ARCHITECTURE.md §11`](../../ARCHITECTURE.md); §1.5, §3 (egress node) | **Designed** |
 | **Red Team model residency & provenance** | Attacker runs on a US-origin, Meta-Llama-based open-weight model (Nous Hermes 4) via a US-hosted inference endpoint (OpenRouter); generates synthetic attack strings only, never processes PHI; PHI residency stays enforced at the self-hosted target boundary; no PRC-origin model in the runtime path (DeepSeek-R1 is a CISO-sign-off-gated escalation only) | §1.5; §5 (dependency inventory); §3 (DFD, F20/F21) | **Designed** |

@@ -20,11 +20,19 @@ tokens, standard/non-introductory, so the cost governor never under-counts):
 
 ## 1. Actual development spend
 
-**In-process metered LLM spend for this build: `$0.00`.**
+**Keyless in-process LLM spend: `$0.00`. Keyed spend: a few tenths of a cent per campaign.**
 
-This is not an estimate — it is what the platform's own per-agent cost meter reports.
-The whole build ran with **no `ANTHROPIC_API_KEY`** (`settings.has_llm == False`), and
-the cost store returns exactly zero:
+Two honest figures, both from the platform's own per-agent cost meter (not estimates):
+
+- **Keyless** — the bulk of the build ran with **no `ANTHROPIC_API_KEY`** (`settings.has_llm == False`);
+  the deterministic Judge + subagent-driven roles produced every finding, and the cost store returns
+  exactly zero (below).
+- **Keyed** — once an `ANTHROPIC_API_KEY` (and later an `OPENROUTER_API_KEY`) were added, a live
+  campaign meters real spend: e.g. **one Claude-Opus Judge adjudication ≈ `$0.0047`** on the
+  unauthenticated surface (the only LLM call an unauth run makes). The Hermes attacker adds spend only
+  when the mutator fires (chat partials); OpenRouter reports the true `usage.cost` per call.
+
+The keyless zero, reproduced:
 
 ```
 $ python -c "from adversaryforge.observability.store import Store; \

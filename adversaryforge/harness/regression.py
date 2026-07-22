@@ -148,6 +148,7 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
         executor = SeedExecutor(client)
         _trace_token = bind_tracer(Tracer(store, run_id) if settings.trace_enabled else None)
+        _judge_seen = {"usd": 0.0, "in": 0, "out": 0}  # cumulative Judge-LLM spend metered
 
         for case in cases:
             seed_id = (case.request or {}).get("seed_id")
@@ -189,6 +190,7 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
             # Replay the frozen sequence and re-adjudicate the invariant.
             attempt = await executor.run(seed, directive_id="regression")
             verdict = judge.evaluate_attempt(attempt)
+            _meter_judge_llm(judge, store, run_id, _judge_seen)  # LLM spend -> cost ledger
             outcome = verdict.outcome
 
             decision = _decide_case(
@@ -256,6 +258,20 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
         "details": cli_details,  # CLI/consumer contract
         "cases": details,        # rich internal rows
     }
+
+
+def _meter_judge_llm(judge, store, run_id: str, seen: dict) -> None:
+    """Write the Judge adjudicator's LLM spend delta into the cost ledger (mirrors
+    Orchestrator._meter_judge_llm), so regression runs meter real spend too."""
+    adj = getattr(judge, "_llm", None)
+    usage = getattr(adj, "usage", None) if adj is not None else None
+    if usage is None:
+        return
+    in_t, out_t, usd = usage()
+    d_usd = usd - seen["usd"]
+    if d_usd > 1e-9:
+        store.log_cost(run_id, "judge", "adjudicator", in_t - seen["in"], out_t - seen["out"], d_usd)
+        seen.update(usd=usd, **{"in": in_t, "out": out_t})
 
 
 def detect_cross_category_regression(before: dict, after: dict) -> list[str]:

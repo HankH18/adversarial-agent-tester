@@ -178,6 +178,10 @@ async def test_run_regression_pass_when_defense_holds(tmp_path, monkeypatch):
     case = result["cases"][0]
     assert case["result"] == "passed"
     assert case["outcome"] == "failure"
+    # Exercise the CLI-contract 'details' row shape with a REAL populated row.
+    drow = result["details"][0]
+    assert set(drow) >= {"case_id", "category", "passed", "note"}
+    assert drow["passed"] is True and isinstance(drow["note"], str) and drow["note"]
 
 
 async def test_run_regression_errored_target_fails_closed(tmp_path, monkeypatch):

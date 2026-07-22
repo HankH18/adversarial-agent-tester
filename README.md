@@ -26,8 +26,8 @@ never call each other directly — they exchange **versioned, typed JSON-Schema 
 | Component | Role | Trust | Powered by |
 |---|---|---|---|
 | **Orchestrator** | Strategist — deterministic target selection from the observability substrate | trusted | code (LLM only for prose rationale) |
-| **Red Team** | Adversary — seed execution + mutation of partial attacks | untrusted / sandboxed | Claude (Anthropic) / subagent-driven |
-| **Judge** | Independent evaluator — success/failure/partial per attempt | semi-trusted, cannot act | **deterministic-first**, LLM-second on Claude (attacker-family separation is planned/config-switchable — see [AS_BUILT](docs/AS_BUILT.md)) |
+| **Red Team** | Adversary — seed execution + mutation of partial attacks | untrusted / sandboxed | **Hermes 4 405B via OpenRouter** (Meta-Llama family) when `OPENROUTER_API_KEY` is set; Claude fallback |
+| **Judge** | Independent evaluator — success/failure/partial per attempt | semi-trusted, cannot act | **deterministic-first**, LLM-second on **Claude** — a *different model family* from the Hermes attacker |
 | **Documentation** | Scribe — confirmed exploit → professional vuln report | gated | Claude + human approval on criticals |
 | **Regression Harness** | Freezes exploits into replayable, versioned tests | deterministic | code |
 | **Observability** | Append-only substrate the Orchestrator reads | deterministic | SQLite |

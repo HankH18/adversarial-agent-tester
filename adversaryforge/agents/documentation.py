@@ -532,6 +532,11 @@ def generate_all_reports(*, settings=None) -> int:
             seen_ids.add(report.report_id)
             reports_to_write.append(_maybe_enrich(report, exploit, settings))
 
+        # If NOTHING valid was rebuilt (e.g. every exploit failed the data-quality
+        # gate), do not wipe committed reports we cannot regenerate.
+        if not reports_to_write:
+            return 0
+
         # Clean slate — but only remove stale VULN-*.md we will NOT rewrite, so a
         # partial/incomplete DB can never delete a report it cannot rebuild.
         keep = {f"{r.report_id}.md" for r in reports_to_write}

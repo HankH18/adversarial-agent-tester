@@ -44,7 +44,7 @@ substrate answers every required observability question.
 | | |
 |---|---|
 | **Built** ✅ | A declarative, reproducible seed engine, not a payload dump. Seeds name the invariant they target, their OWASP Web + LLM mapping, the expected-safe behavior, and a test-design role (`adversaryforge/redteam/seeds.py:59+`; corpus in `evals/seeds/*.yaml`). The `SeedExecutor` compiles each step into a real HTTP request — chat, generic HTTP, multipart document upload with document-id capture, and a bounded liveness *burst* for rate-limit probing — and assembles the transcript the Judge reads (`adversaryforge/redteam/executor.py:25-209`; multipart at `:124-130`, `from-upload` sentinel substitution at `:140-154`, burst at `:76-100`). **The executor never decides success** — it deliberately does not judge its own attacks (`:6-9`). The **mutation loop is real**: a `partial` verdict on a message-bearing seed autonomously generates N variants, runs each as a linked child attempt (generation+1), re-judges, and promotes any breakthrough — the case study's "take a partial → generate 10 variants" behavior (`orchestrator.py:118-151`). The Mutator has a fully deterministic keyless fallback (role/authority/leetspeak/base64/turn-split/hypothetical/override transforms) so the loop runs with no API key (`adversaryforge/llm/mutator.py:93-200`). |
-| **Built, narrower** 🟡 | The **model** is the plan's biggest live deviation — see **§2.3**. The intended attacker (Nous Hermes 4 via OpenRouter) is not the shipped path; the in-process LLM mutator defaults to Claude (`config.py:30-33`). |
+| **Built** ✅ | The intended attacker — **Nous Hermes 4 405B via OpenRouter** — is the shipped path when `OPENROUTER_API_KEY` is set (verified with a live call), restoring the *different model family* independence from the Claude Judge; absent the key the mutator falls back to Claude. See **§2.3**. |
 | **Deferred** ⚪ | Tree/TAP-style search with pruning and full role-phased escalation (`ARCHITECTURE.md §4.2`) are not built — mutation is a single breadth wave, not an iterative pruned tree. The collaborating "attack squad" was always a deferred gated experiment (`§4.2`) and remains so. |
 | **Why** | The graded Red Team requirement — *reproducible cases across ≥3 categories, and a partial autonomously expanded into variants* — is met and tested. Tree search buys attack-success depth the MVP doesn't need to prove the architecture; it is additive. |
 
@@ -124,7 +124,14 @@ These are the deviations a CISO should weigh most. None is hidden; each has a ra
 
 **Not yet built on the LLM tier:** the per-run Cohen's-κ calibration gate and the multi-vote panel (§1.3). See §3 for how drift is nonetheless detected today.
 
-### 2.3 Attacker model: Nous Hermes 4 / OpenRouter (planned) vs. Claude / subagent (shipped)
+### 2.3 Attacker model: Nous Hermes 4 405B via OpenRouter — now active (Claude fallback)
+
+> **Update:** this is no longer a deviation. With `OPENROUTER_API_KEY` set, the Red Team attacker +
+> mutator run on **Hermes 4 405B (Meta-Llama family) via OpenRouter** while the Judge runs on **Claude**
+> — different families, verified by a live call (`nousresearch/hermes-4-405b`, real per-call cost metered
+> from OpenRouter's `usage.cost`). The `OpenRouterClient` (`llm/openrouter.py`) mirrors the Anthropic
+> client so the Mutator swaps backends transparently; absent the key it falls back to Claude. The
+> historical planned-vs-shipped discussion below is retained for context.
 
 **What the plan says.** `ARCHITECTURE.md §4.2, §10` specify the attacker as **Nous Hermes 4 (405B) via OpenRouter** — a Llama-based, low-refusal, open-weight model chosen to be a **different model family from the Claude Judge**, so that a jailbreak one family rationalizes is not one the other waves through. Model-family separation is one of the three structural pillars of Judge independence.
 
@@ -174,7 +181,7 @@ The plan's headline drift control (per-run Cohen's-κ gate) is **not yet built**
 | # | Residual risk | Severity | Bounded by | Closes when |
 |---|---|---|---|---|
 | R1 | ~~No-signal cost halt not wired~~ **RESOLVED** — the halt is now enforced in `run_campaign` (`platform.py:134`, tested) | Low | Per-agent metering + self-throttle + the wired halt | Done; monitor once the LLM path is live with a real key |
-| R2 | Attacker LLM tier is same family (Claude) as the Judge LLM tier (§2.3) | Medium, scoped to LLM-tier verdicts only | Deterministic-first + `JudgeView` info barrier carry most verdicts | `redteam_model` points at OpenRouter Hermes (config change) |
+| R2 | ~~Attacker same family as Judge~~ **RESOLVED when `OPENROUTER_API_KEY` is set** — attacker runs Hermes 4 (Llama family), Judge runs Claude (§2.3); reverts to same-family only if OpenRouter is absent | Low (config-present) | Different family active + deterministic-first + `JudgeView` barrier | Done; keep the key set |
 | R3 | Per-run κ calibration gate + multi-vote panel not built (§3.1) | Medium, scoped to LLM-tier verdicts | Versioned deterministic ruleset + ground-truth test set | κ gate lifted into the campaign preamble; panel added to LLM tier |
 | R4 | No LangGraph durable checkpoint/resume; a crashed run restarts (§2.1) | Low (append-only store loses no data; only in-flight position) | Completed artifacts already persisted per hop | LangGraph migration (nodes=agents, edges=contracts already map) |
 | R5 | Cross-category regression detection built but not wired into the live loop (§1.5) | Low | The function is tested; full-suite replay still runs | Wire `detect_cross_category_regression` into `run_regression` |

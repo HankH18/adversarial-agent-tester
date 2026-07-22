@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        populate_by_name=True,  # allow Settings(field_name=...) in tests, not just the env alias
     )
 
     # --- LLM (platform's own agents) ---------------------------------------
@@ -31,6 +32,17 @@ class Settings(BaseSettings):
         default="claude-sonnet-5", validation_alias="ADVERSARYFORGE_REDTEAM_MODEL"
     )
     doc_model: str = Field(default="claude-sonnet-5", validation_alias="ADVERSARYFORGE_DOC_MODEL")
+
+    # Red Team attacker via OpenRouter (Hermes 4). Present ⇒ the Red Team/mutator runs
+    # on a DIFFERENT model family from the Claude Judge (restores structural independence).
+    openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
+    openrouter_redteam_model: str = Field(
+        default="nousresearch/hermes-4-405b",
+        validation_alias="ADVERSARYFORGE_OPENROUTER_REDTEAM_MODEL",
+    )
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1", validation_alias="ADVERSARYFORGE_OPENROUTER_BASE_URL"
+    )
 
     # --- Target ------------------------------------------------------------
     target_base_url: str = Field(
@@ -53,6 +65,16 @@ class Settings(BaseSettings):
         default=2.0, validation_alias="ADVERSARYFORGE_NOSIGNAL_HALT_USD"
     )
 
+    # --- Blast-radius control ----------------------------------------------
+    # The platform is READ-ONLY against the target by default: write-path seeds
+    # are excluded from campaigns AND a client-side default-deny guard refuses any
+    # POST/PUT/PATCH/DELETE to /v1/writes*. Verifying the target's own write-gate
+    # (INV-WRITE-GATED) requires this explicit operator opt-in, which sends a single
+    # harmless probe expecting a 503/403 — no write is ever committed.
+    allow_write_probe: bool = Field(
+        default=False, validation_alias="ADVERSARYFORGE_ALLOW_WRITE_PROBE"
+    )
+
     # --- Execution tracing -------------------------------------------------
     # Fine-grained per-agent span tracing to the observability store. Low
     # overhead; on by default. Set 0/false to disable.
@@ -65,6 +87,10 @@ class Settings(BaseSettings):
     @property
     def has_llm(self) -> bool:
         return bool(self.anthropic_api_key.strip())
+
+    @property
+    def has_openrouter(self) -> bool:
+        return bool(self.openrouter_api_key.strip())
 
     @property
     def has_session(self) -> bool:

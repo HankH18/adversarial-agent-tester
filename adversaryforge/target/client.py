@@ -92,6 +92,16 @@ class TargetClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+    def _is_blocked_write(self, method: str, path: str) -> bool:
+        if getattr(self._settings, "allow_write_probe", False):
+            return False
+        if method.upper() not in self._WRITE_METHODS:
+            return False
+        p = (path or "").split("?", 1)[0]
+        return p == "/v1/writes" or p.startswith("/v1/writes/")
+
     async def _pace(self) -> None:
         """Enforce the minimum inter-request gap (in addition to the sem cap)."""
         async with self._gap_lock:
@@ -114,6 +124,20 @@ class TargetClient:
     ) -> TargetResponse:
         corr = uuid.uuid4().hex
         url = self._adapter.base_url + path if path.startswith("/") else path
+
+        # Blast-radius guard: default-deny any write to /v1/writes*. The platform is
+        # read-only against the target unless the operator explicitly opts in
+        # (allow_write_probe). This is a self-enforced control at the HTTP layer, not
+        # a promise outsourced to the target's own feature flag.
+        if self._is_blocked_write(method, path):
+            return TargetResponse(
+                method=method, url=url, request_headers={"X-Correlation-Id": corr},
+                request_body=json if json is not None else params, status_code=0,
+                response_headers={}, body_text="client-side default-deny write guard: "
+                "request NOT sent (set ADVERSARYFORGE_ALLOW_WRITE_PROBE=1 to probe the "
+                "target's write-gate)", latency_ms=0.0, correlation_id=corr,
+                error="blocked_by_write_guard")
+
         req_headers: dict[str, str] = {"X-Correlation-Id": corr}
         req_headers.update(self._session.headers())
         if headers:

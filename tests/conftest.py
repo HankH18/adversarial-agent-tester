@@ -16,6 +16,7 @@ from adversaryforge.config import get_settings
 @pytest.fixture(autouse=True)
 def _hermetic_secrets(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setenv("AGENTFORGE_SESSION_COOKIE", "")
     get_settings.cache_clear()
     yield

@@ -47,9 +47,22 @@ class Mutator:
 
     def __init__(self, settings) -> None:
         self._settings = settings
-        # Key-optional: only build a client when a key is present.
-        self._client = LLMClient(settings) if settings.has_llm else None
-        self._model = settings.redteam_model
+        # Provider preference for the ATTACKER: OpenRouter/Hermes (different family
+        # from the Claude Judge) if configured, else Claude, else deterministic-only.
+        if settings.has_openrouter:
+            from adversaryforge.llm.openrouter import OpenRouterClient
+
+            self._client = OpenRouterClient(settings)
+            self._model = settings.openrouter_redteam_model
+            self._provider = "openrouter"
+        elif settings.has_llm:
+            self._client = LLMClient(settings)
+            self._model = settings.redteam_model
+            self._provider = "anthropic"
+        else:
+            self._client = None
+            self._model = settings.redteam_model
+            self._provider = "none"
         self.cost_usd = 0.0
 
     async def mutate(
@@ -79,8 +92,8 @@ class Mutator:
                 _SYSTEM, user, model=self._model, max_tokens=2048
             )
 
-        with trace("llm.call", "redteam", role="mutator", model=self._model,
-                   max_tokens=2048, prompt_chars=len(user)) as sp:
+        with trace("llm.call", "redteam", role="mutator", provider=self._provider,
+                   model=self._model, max_tokens=2048, prompt_chars=len(user)) as sp:
             try:
                 text, _in, _out, usd = await asyncio.to_thread(_call)
             except Exception as exc:

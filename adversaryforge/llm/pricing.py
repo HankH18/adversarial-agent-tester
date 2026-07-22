@@ -21,6 +21,10 @@ _PRICES: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-fable-5": (10.00, 50.00),
+    # OpenRouter — Red Team attacker (Hermes 4, Meta-Llama base). Static fallback
+    # only: OpenRouter returns the true usd in usage.cost, which we prefer.
+    "nousresearch/hermes-4-405b": (0.90, 0.90),
+    "nousresearch/hermes-4-70b": (0.13, 0.13),
 }
 
 # Conservative default for an unknown model id: Opus-tier (the most expensive

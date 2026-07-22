@@ -15,13 +15,20 @@ class _Settings:
     """Minimal key-less settings stand-in (mirrors config.Settings surface)."""
 
     anthropic_api_key = ""
+    openrouter_api_key = ""
     judge_model = "claude-opus-4-8"
     redteam_model = "claude-sonnet-5"
     doc_model = "claude-sonnet-5"
+    openrouter_redteam_model = "nousresearch/hermes-4-405b"
+    openrouter_base_url = "https://openrouter.ai/api/v1"
 
     @property
     def has_llm(self) -> bool:
         return bool(self.anthropic_api_key.strip())
+
+    @property
+    def has_openrouter(self) -> bool:
+        return bool(self.openrouter_api_key.strip())
 
 
 def test_module_imports_cleanly():
@@ -90,3 +97,36 @@ def test_mutator_handles_empty_base():
     variants = asyncio.run(mut.mutate([], "INV-INJECTION-INERT", "", n=8))
     assert len(variants) == 8
     assert len({tuple(v) for v in variants}) == 8
+
+
+class _ORSettings(_Settings):
+    openrouter_api_key = "sk-or-test"
+
+
+def test_mutator_routes_to_openrouter_when_key_present():
+    # Attacker on Hermes (OpenRouter) while the Judge stays Claude — different family.
+    from adversaryforge.llm import Mutator
+
+    mut = Mutator(_ORSettings())
+    assert mut._provider == "openrouter"
+    assert mut._model == "nousresearch/hermes-4-405b"
+
+
+def test_openrouter_client_uses_reported_cost_and_tokens():
+    import respx
+    from httpx import Response
+
+    from adversaryforge.llm.openrouter import OpenRouterClient
+
+    with respx.mock(assert_all_called=True) as router:
+        router.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=Response(200, json={
+                "choices": [{"message": {"content": "variant text"}}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 40, "cost": 0.0123},
+            }))
+        text, i, o, usd = OpenRouterClient(_ORSettings()).complete(
+            "sys", "user", model="nousresearch/hermes-4-405b", max_tokens=64)
+
+    assert text == "variant text"
+    assert (i, o) == (100, 40)
+    assert usd == 0.0123  # OpenRouter's real usage.cost, not the static estimate
