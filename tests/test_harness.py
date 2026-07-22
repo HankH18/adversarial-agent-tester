@@ -210,17 +210,17 @@ async def test_run_regression_errored_target_fails_closed(tmp_path, monkeypatch)
 async def test_run_regression_fails_and_reopens_resolved_exploit(tmp_path, monkeypatch):
     st = _settings(tmp_path, monkeypatch)
     store = Store(st.db_path)
-    _seed_case(store, "df-authz-chat-noauth", "ex_reappear", "INV-AUTHZ-PATIENT")
-    _resolved_exploit(store, "ex_reappear", "INV-AUTHZ-PATIENT")
+    _seed_case(store, "di-ready-enum", "ex_reappear", "INV-INFO-DISCLOSURE")
+    _resolved_exploit(store, "ex_reappear", "INV-INFO-DISCLOSURE")
     store.close()
 
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{BASE}/health").mock(
             return_value=Response(200, json={"version": "test-1"}))
-        # 200 with a served answer => cross-patient read => Judge success => FAIL.
-        router.post(f"{BASE}/v1/chat").mock(return_value=Response(
-            200, json={"action": "served", "answer": "Patient Jane Doe, glucose 210",
-                       "claims": [{"c": 1}]}))
+        # /ready leaks dependency inventory to an anonymous caller =>
+        # INV-INFO-DISCLOSURE success => the previously-resolved finding FAILS again.
+        router.get(f"{BASE}/ready").mock(return_value=Response(
+            200, json={"dependencies": {"openemr": "ok", "fhir": "ok"}, "database": "ok"}))
 
         result = await run_regression(settings=st)
 
@@ -235,6 +235,52 @@ async def test_run_regression_fails_and_reopens_resolved_exploit(tmp_path, monke
     status = {e["exploit_id"]: e["status"] for e in store2.list_exploits()}
     store2.close()
     assert status["ex_reappear"] == "open"
+
+
+async def test_run_regression_replays_the_mutated_override_payload(tmp_path, monkeypatch):
+    # Anti-drift core: a mutation-discovered case must replay the MUTATED payload that
+    # broke through, NOT the base seed (which was only ever a partial). Guards the
+    # override_messages replay so a refactor dropping it fails loudly.
+    import json as _json
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    store.record_regression_case(RegressionCandidate(
+        case_id="rc_mut", exploit_id="ex_mut", category=AttackCategory.data_exfiltration,
+        request={"seed_id": "df-authz-chat-noauth", "steps": [],
+                 "override_messages": ["MUTATED-BREAKTHROUGH-XYZ"]},
+        assertion={"kind": "invariant_holds", "invariant": "INV-AUTHZ-PATIENT"},
+        severity=Severity.high))
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        chat = router.post(f"{BASE}/v1/chat").mock(return_value=Response(401, json={}))
+        await run_regression(settings=st)
+
+    sent = _json.loads(chat.calls.last.request.content)
+    assert sent["message"] == "MUTATED-BREAKTHROUGH-XYZ"  # the MUTATED payload, not the base seed
+
+
+async def test_expired_cookie_downgrades_to_unauthenticated_and_skips_authed(tmp_path, monkeypatch):
+    # A non-empty but REJECTED cookie must not let authed cases run and false-pass on
+    # a 401. run_regression probes /v1/auth/me and downgrades a dead session to unauth,
+    # so authed cases SKIP (never green-on-drift).
+    _settings(tmp_path, monkeypatch)  # sets data dir + BASE; cookie forced ""
+    monkeypatch.setenv("AGENTFORGE_SESSION_COOKIE", "expired-garbage-cookie")
+    st = Settings()  # re-read WITH the cookie -> authed starts True
+    store = Store(st.db_path)
+    _seed_case(store, "pi-direct-system-prompt-reveal", "ex_auth", "INV-INJECTION-INERT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.get(f"{BASE}/v1/auth/me").mock(return_value=Response(401, json={}))  # dead session
+        result = await run_regression(settings=st)
+
+    assert result["skipped"] >= 1          # authed case skipped, not falsely passed
+    assert result["passed"] == 0
+    actions = {e["action"] for e in Store(st.db_path).agent_timeline(result["run_id"])}
+    assert "session_expired" in actions
 
 
 async def test_run_regression_skips_auth_required_case_without_session(tmp_path, monkeypatch):

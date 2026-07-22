@@ -69,6 +69,36 @@ async def test_upload_step_sends_multipart_not_json():
     assert b"SYSTEM OVERRIDE" in req.content  # the payload rode the file part
 
 
+async def test_override_messages_substitutes_the_step_message():
+    seed = Seed.model_validate({
+        "id": "c", "category": "prompt_injection", "title": "t",
+        "target_invariant": "INV-INJECTION-INERT", "expected_safe": "x", "requires_auth": True,
+        "steps": [{"kind": "chat", "message": "base message", "patient_id": 1}]})
+    with respx.mock(assert_all_called=True) as router:
+        chat = router.post(f"{BASE}/v1/chat").mock(
+            return_value=Response(200, json={"answer": "ok", "action": "withheld", "claims": []}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _settings()) as c:
+            await SeedExecutor(c).run(seed, directive_id="t", override_messages=["OVERRIDDEN-PAYLOAD"])
+    assert json.loads(chat.calls.last.request.content)["message"] == "OVERRIDDEN-PAYLOAD"
+
+
+async def test_override_longer_than_steps_grows_into_multi_turn():
+    # A "split across turns" mutation is longer than the seed; the executor must grow
+    # the step list (threaded turns) so every variant turn actually executes.
+    seed = Seed.model_validate({
+        "id": "c", "category": "prompt_injection", "title": "t",
+        "target_invariant": "INV-INJECTION-INERT", "expected_safe": "x", "requires_auth": True,
+        "steps": [{"kind": "chat", "message": "base", "patient_id": 1}]})
+    with respx.mock(assert_all_called=False) as router:
+        chat = router.post(f"{BASE}/v1/chat").mock(return_value=Response(
+            200, json={"answer": "ok", "action": "withheld", "claims": [], "conversation_id": 7}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _settings()) as c:
+            await SeedExecutor(c).run(seed, directive_id="t",
+                                      override_messages=["turn1", "turn2", "turn3"])
+    assert chat.call_count == 3  # grew from 1 step to 3 executed turns
+    assert json.loads(chat.calls.last.request.content)["message"] == "turn3"
+
+
 async def test_burst_producer_fires_n_requests_and_records_statuses():
     # Exercise the real _burst producer (not just the Judge's rate-limit consumer):
     # it must fire burst_count requests and record the observed status set.

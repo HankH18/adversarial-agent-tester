@@ -75,11 +75,13 @@ _INVARIANT_PLAYBOOK: dict[str, dict[str, str]] = {
             "behavior below.)"
         ),
         "remediation": (
-            "Strip internal detail from every model-facing and error path: a "
-            "generic user-safe error envelope (no stack traces, no tool schemas), "
-            "and a system-prompt non-disclosure rule backed by an output filter "
-            "that redacts known internal markers. Never echo raw tool errors to "
-            "the chat surface."
+            "Gate or minimize the disclosing endpoint itself (see the observed "
+            "behavior for which one). For anonymous infra endpoints: require auth "
+            "for detailed dependency/health inventory (return only a minimal liveness "
+            "signal to anonymous callers), disable the public OpenAPI/schema route in "
+            "production, and stop returning config/version (e.g. auth_mode) to "
+            "unauthenticated callers. For any model-facing path, also strip stack "
+            "traces and internal markers behind a generic error envelope."
         ),
     },
     "INV-RATE-LIMIT": {

@@ -19,7 +19,7 @@ vulnerabilities in AI-assisted clinical chatbots.** Target #1 is the OpenEMR **C
 
 ## What it is (agent roster)
 
-Four AI agent roles + two deterministic subsystems, coordinated by a durable state machine. Agents
+Four AI agent roles + two deterministic subsystems, coordinated by a deterministic Python orchestrator (LangGraph is the planned migration — see AS_BUILT). Agents
 never call each other directly — they exchange **versioned, typed JSON-Schema contracts**
 ([`/contracts`](contracts/)).
 
