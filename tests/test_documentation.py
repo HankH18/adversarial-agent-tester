@@ -59,7 +59,7 @@ def _exploit(
         expected_safe=expected,
         observed=observed,
         owasp_web=[OwaspWeb.A01_broken_access_control],
-        owasp_llm=[OwaspLlm.LLM06_sensitive_disclosure],
+        owasp_llm=[OwaspLlm.LLM02_sensitive_disclosure],
     )
 
 
@@ -88,7 +88,7 @@ def test_build_report_populates_every_required_field():
 
     # OWASP mappings carried through.
     assert OwaspWeb.A01_broken_access_control.value in report.owasp_web
-    assert OwaspLlm.LLM06_sensitive_disclosure.value in report.owasp_llm
+    assert OwaspLlm.LLM02_sensitive_disclosure.value in report.owasp_llm
 
     # Deterministic report_id.
     assert build_report(_exploit(observed="x", expected="y")).report_id  # any exploit builds

@@ -22,6 +22,7 @@ Design constraints (from the platform requirements):
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -316,12 +317,14 @@ def _report_id(exploit: ConfirmedExploit) -> str:
     # transcript), NOT the per-run exploit_id. So regenerating overwrites the same
     # VULN-*.md file instead of accumulating duplicates for the same finding.
     cat = exploit.category.value if hasattr(exploit.category, "value") else str(exploit.category)
-    # Mirror Store._dedupe_key: attacker-authored sequence + invariant only, so the
-    # same finding yields the same VULN-*.md id across runs (target prose varies).
-    seq = cat + "|" + (exploit.target_invariant or "") + "|" + "|".join(
-        t.content for t in exploit.minimal_transcript if t.role == "attacker"
-    )
-    digest = hashlib.sha256(seq.encode()).hexdigest()[:10]
+    # Mirror Store._dedupe_key exactly (json, not a "|" join): attacker sequence +
+    # invariant only, so the same finding yields the same VULN-*.md id across runs.
+    payload = {
+        "category": cat,
+        "invariant": exploit.target_invariant or "",
+        "attacker": [t.content for t in exploit.minimal_transcript if t.role == "attacker"],
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:10]
     return f"VULN-{digest}"
 
 

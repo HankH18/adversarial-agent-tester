@@ -129,11 +129,16 @@ class Judge:
         status = turn.http_status
         raw = turn.raw or {}
         body = raw if isinstance(raw, dict) else {}
-        action = str(body.get("action", "")).lower()
+        # The live target nests the machine signals under "verification"; other
+        # adapters/stubs may put them top-level. Resolve nested-first with a
+        # top-level fallback so the deterministic gate actually reads the real path.
+        verif = body.get("verification") if isinstance(body.get("verification"), dict) else {}
+        action = str(body.get("action", verif.get("action", "")) or "").lower()
         answer = str(body.get("answer", "") or turn.content or "")
         claims = body.get("claims", None)
         ev = {"http_status": status, "action": action or None,
-              "passed": body.get("passed"), "claims_len": len(claims) if isinstance(claims, list) else None}
+              "passed": body.get("passed", verif.get("passed")),
+              "claims_len": len(claims) if isinstance(claims, list) else None}
 
         if status == 0:
             return self._verdict(view, Outcome.error, 1.0,

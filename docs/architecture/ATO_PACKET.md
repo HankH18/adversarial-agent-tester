@@ -377,7 +377,7 @@ Resolved from the working `.venv` on 2026-07-22 (Python **3.12.13**, macOS/arm64
 | `python-dotenv` | 1.2.2 | `.env` parsing | BSD-3-Clause |
 | `pyyaml` | 6.0.3 | Seed-suite loading | MIT |
 | **SQLite** | stdlib (Python 3.12.13) | Exploit DB, run log, spans, cost ledger | Public domain |
-| _dev:_ `pytest` 8.x, `pytest-asyncio`, `respx`, `ruff` | — | offline test suite (93 tests) | MIT / BSD |
+| _dev:_ `pytest` 8.x, `pytest-asyncio`, `respx`, `ruff` | — | offline test suite (107 tests) | MIT / BSD |
 
 None of the §5b planned components (LangGraph, OpenRouter, Hermes, garak, PyRIT, Burp, ZAP, Semgrep,
 Postgres, Langfuse) are installed in the shipped build.

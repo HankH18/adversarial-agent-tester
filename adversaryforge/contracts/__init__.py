@@ -67,11 +67,12 @@ class OwaspWeb(str, Enum):
 
 class OwaspLlm(str, Enum):
     LLM01_prompt_injection = "LLM01:2025-Prompt Injection"
-    LLM02_insecure_output = "LLM02:2025-Insecure Output Handling"
+    LLM02_sensitive_disclosure = "LLM02:2025-Sensitive Information Disclosure"
+    LLM03_supply_chain = "LLM03:2025-Supply Chain"
     LLM04_data_poisoning = "LLM04:2025-Data and Model Poisoning"
-    LLM05_supply_chain = "LLM05:2025-Supply Chain"
-    LLM06_sensitive_disclosure = "LLM06:2025-Sensitive Information Disclosure"
-    LLM08_excessive_agency = "LLM08:2025-Excessive Agency"
+    LLM05_improper_output = "LLM05:2025-Improper Output Handling"
+    LLM06_excessive_agency = "LLM06:2025-Excessive Agency"
+    LLM08_vector_embedding = "LLM08:2025-Vector and Embedding Weaknesses"
     LLM10_unbounded_consumption = "LLM10:2025-Unbounded Consumption"
 
 

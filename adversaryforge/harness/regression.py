@@ -149,6 +149,7 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
         executor = SeedExecutor(client)
         _trace_token = bind_tracer(Tracer(store, run_id) if settings.trace_enabled else None)
         _judge_seen = {"usd": 0.0, "in": 0, "out": 0}  # cumulative Judge-LLM spend metered
+        passfail_before = store.passfail_rates()  # snapshot for cross-category regression
 
         for case in cases:
             seed_id = (case.request or {}).get("seed_id")
@@ -225,6 +226,13 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
             details.append(row)
 
+        # Cross-category regression: did fixing/replaying push any OTHER category's
+        # success count up this run? (fixing one attack can regress another.)
+        cross_category = detect_cross_category_regression(passfail_before, store.passfail_rates())
+        if cross_category:
+            store.log_event(run_id, "harness", "cross_category_regression",
+                            f"success rose in: {', '.join(cross_category)}")
+
         unbind_tracer(_trace_token)
         store.end_run(run_id, store.cost_summary(run_id)["usd"])
 
@@ -255,6 +263,7 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
         # which must NOT read as "everything is fixed". Skips (auth/missing seed)
         # are explicitly out of scope and don't fail the gate.
         "all_passed": failed == 0 and errored == 0,
+        "cross_category_regressions": cross_category,  # categories whose success rose
         "details": cli_details,  # CLI/consumer contract
         "cases": details,        # rich internal rows
     }

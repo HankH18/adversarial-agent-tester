@@ -411,10 +411,14 @@ class Store:
         # Key on the ATTACKER-authored sequence + the invariant only. Target turns
         # (answers, latency-bearing burst results, LLM prose) vary run-to-run, so
         # including them would defeat "no duplicate for the same attack sequence".
-        seq = _enum(exploit.category) + "|" + (exploit.target_invariant or "") + "|" + "|".join(
-            t.content for t in exploit.minimal_transcript if t.role == "attacker"
-        )
-        return hashlib.sha256(seq.encode()).hexdigest()
+        # Serialize with json (not a "|" join) so a message containing the delimiter
+        # can never make two distinct sequences collide.
+        payload = {
+            "category": _enum(exploit.category),
+            "invariant": exploit.target_invariant or "",
+            "attacker": [t.content for t in exploit.minimal_transcript if t.role == "attacker"],
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
     def close(self) -> None:
         self._conn.close()

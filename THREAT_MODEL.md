@@ -70,7 +70,7 @@ something," not "the target moved."
 ## 2. Prompt injection
 
 **OWASP Web:** A03:2021 Injection · A04:2021 Insecure Design.
-**OWASP LLM:** LLM01:2025 Prompt Injection (primary) · LLM06:2025 Sensitive Information Disclosure.
+**OWASP LLM:** LLM01:2025 Prompt Injection (primary) · LLM02:2025 Sensitive Information Disclosure.
 **Invariants under test:** `INV-INJECTION-INERT`, `INV-HISTORY-INTEGRITY`, `INV-WITHHOLD-UNGROUNDED`.
 
 ### 2.1 Direct injection (attacker text in `/v1/chat`)
@@ -122,7 +122,7 @@ something," not "the target moved."
 ## 3. Data exfiltration
 
 **OWASP Web:** A01:2021 Broken Access Control (primary) · A07:2021 Identification & Authentication Failures.
-**OWASP LLM:** LLM06:2025 Sensitive Information Disclosure · LLM02:2025 Sensitive Information Disclosure paths.
+**OWASP LLM:** LLM02:2025 Sensitive Information Disclosure.
 **Invariants under test:** `INV-AUTHZ-PATIENT`, `INV-PHI-EGRESS`, `INV-EXISTENCE-ORACLE`, `INV-INFO-DISCLOSURE`.
 
 ### 3.1 PHI leakage (answer prose + telemetry)
@@ -316,10 +316,10 @@ something," not "the target moved."
 | 2.1 | PI — direct | `/v1/chat`; critic prose gap `graph/critic.py:22-30` | Fabricated narrative | Hard (claims) / Mod (prose) | Verifier strong; **prose gap** | A03 / LLM01 |
 | 2.2 | PI — indirect (docs) | `POST /v1/documents` `pipeline.py:397-436` | Poisoned referral → write | Moderate | OCR gate strong; **no defusing** | A03 / LLM01 |
 | 2.3 | PI — multi-turn | 40-turn replay `service.py:542-592` | Slow-boil false premise | Moderate | Per-turn verify; **history/prose gap** | A03 / LLM01 |
-| 3.1 | Exfil — PHI leak | prose + telemetry; `deidentify` shape-scrub | PHI disclosure | Hard-Mod | Distill+pseudonym; **no NER/bare-int** | A01 / LLM06 |
-| 3.2 | Exfil — cross-patient | `rounds/start` caller list (#5) | Cross-tenant PHI | Low (by design) | Audit model; **probe audit integrity** | A01 / LLM06 |
+| 3.1 | Exfil — PHI leak | prose + telemetry; `deidentify` shape-scrub | PHI disclosure | Hard-Mod | Distill+pseudonym; **no NER/bare-int** | A01 / LLM02 |
+| 3.2 | Exfil — cross-patient | `rounds/start` caller list (#5) | Cross-tenant PHI | Low (by design) | Audit model; **probe audit integrity** | A01 / LLM02 |
 | 3.3 | Exfil — authz bypass | all reads; 404-unify | Unauth PHI | Hard | Strong; probe existence oracle | A01 / — |
-| 3.4 | Exfil — info disclosure | `/ready`, `/openapi.json`, `/auth/status` | Recon uplift | **Trivial (confirmed)** | **None (open)** | A05 / LLM06 |
+| 3.4 | Exfil — info disclosure | `/ready`, `/openapi.json`, `/auth/status` | Recon uplift | **Trivial (confirmed)** | **None (open)** | A05 / LLM02 |
 | 4.1 | State — history | 40-turn replay `claude.py:159-164` | Self-reinforcing falsehood | Moderate | Per-turn verify; **prose gap** | A08 / LLM01 |
 | 4.2 | State — context poison | keyless lexical retriever (#6) | Wrong guideline evidence | Moderate | Distill+verify; **weak retriever** | A04 / LLM04/08 |
 | 5.1 | Tool — unintended | chat graph → `/v1/writes*` | Unwarranted write | Hard | Det. routing + write-gate | A04 / LLM06 |
@@ -329,7 +329,7 @@ something," not "the target moved."
 | 6.2 | DoS — denial of evidence | reconcile over-withhold (#7); idem store (#4) | Withheld valid data | Moderate | Fail-closed by design; **concurrency gap** | A05 / LLM10 |
 | 7.1 | Identity — privesc | `/v1/auth/callback` PKCE | Impersonation | Hard | Strong auth posture | A07 / — |
 | 7.2 | Identity — persona | `/v1/chat` jailbreaks | Verifier-suppression attempt | Hard (claims) / Mod (prose) | Det. guarantees external; **prose gap** | A01 / LLM01 |
-| 7.3 | Identity — trust boundary | anon/auth + audit boundaries | Recon + enabler | Trivial (leaks) / Hard (authz) | **Info leak open**; authz strong | A01 / LLM06 |
+| 7.3 | Identity — trust boundary | anon/auth + audit boundaries | Recon + enabler | Trivial (leaks) / Hard (authz) | **Info leak open**; authz strong | A01 / LLM02 |
 
 ---
 

@@ -38,7 +38,7 @@
 | G7 | README: setup, arch overview, deployed link, run instructions | Submission | ✅ |
 | G8 | ≥3 distinct professional vulnerability reports | Submission | ✅ 3 generated (reproducible, invariant-specific) |
 | G9 | AI Cost Analysis (100/1K/10K/100K runs) | Submission | ✅ COST_ANALYSIS.md (grounded in pricing.py; non-linear scale model) |
-| G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ✅ 8 schemas, 29 tests, byte-deterministic |
+| G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ✅ 7 schemas, 29 tests, byte-deterministic |
 | G11 | OWASP Top-10 + LLM-Top-10 mapping on each eval case | Eng req | ✅ every seed mapped |
 | G12 | Regression harness: versioned store, replay, reappearance detect | Platform req | ✅ fixed + fail-closed; `regress` runs live |
 | G13 | Observability: coverage/passfail/trend/cost/open-findings queries | Platform req | ✅ store + `status` |
