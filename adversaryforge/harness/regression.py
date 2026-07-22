@@ -92,12 +92,17 @@ def _decide_case(
         return {"result": "skipped", "reason": "requires_auth", "reappeared": False}
 
     val = _enum(outcome)
-    if val == Outcome.error.value:
-        return {"result": "errored", "reason": "inconclusive_target_error", "reappeared": False}
     if val == Outcome.success.value:
         reappeared = (prev_status or "").lower() in _RESOLVED_STATUSES
         return {"result": "failed", "reason": "invariant_falsified", "reappeared": reappeared}
-    return {"result": "passed", "reason": "invariant_holds", "reappeared": False}
+    if val == Outcome.failure.value:
+        return {"result": "passed", "reason": "invariant_holds", "reappeared": False}
+    # partial OR error is INCONCLUSIVE — never a green on drift. A `partial`
+    # (Judge confidence ~0.3, "flagged for review") is the same class as an
+    # unreachable target: we cannot confirm the fix, so the fail-closed gate
+    # treats it as errored, exactly like the error path.
+    reason = "inconclusive_target_error" if val == Outcome.error.value else "inconclusive_partial"
+    return {"result": "errored", "reason": reason, "reappeared": False}
 
 
 async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:

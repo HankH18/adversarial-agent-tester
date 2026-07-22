@@ -316,7 +316,11 @@ def _report_id(exploit: ConfirmedExploit) -> str:
     # transcript), NOT the per-run exploit_id. So regenerating overwrites the same
     # VULN-*.md file instead of accumulating duplicates for the same finding.
     cat = exploit.category.value if hasattr(exploit.category, "value") else str(exploit.category)
-    seq = cat + "|" + "|".join(f"{t.role}:{t.content}" for t in exploit.minimal_transcript)
+    # Mirror Store._dedupe_key: attacker-authored sequence + invariant only, so the
+    # same finding yields the same VULN-*.md id across runs (target prose varies).
+    seq = cat + "|" + (exploit.target_invariant or "") + "|" + "|".join(
+        t.content for t in exploit.minimal_transcript if t.role == "attacker"
+    )
     digest = hashlib.sha256(seq.encode()).hexdigest()[:10]
     return f"VULN-{digest}"
 
@@ -496,12 +500,17 @@ def generate_all_reports(*, settings=None) -> int:
     store = Store(settings.db_path)
     written = 0
     seen_ids: set[str] = set()
-    # Clean slate: remove stale VULN-*.md so reports/ always reflects the CURRENT
-    # exploit DB exactly (no accumulation of duplicates from earlier runs).
-    for stale in _REPORTS_DIR.glob("VULN-*.md"):
-        stale.unlink()
     try:
-        for row in store.list_exploits():
+        rows = store.list_exploits()
+        # NEVER wipe committed reports when there is nothing to regenerate — e.g. a
+        # fresh clone whose SQLite DB is git-ignored and empty. Only the current DB's
+        # findings drive reports/, but an empty DB must not destroy the committed set.
+        if not rows:
+            return 0
+
+        # Pass 1 — build every valid report (and its target filename).
+        reports_to_write: list[VulnReport] = []
+        for row in rows:
             exploit_id = row.get("exploit_id")
             if not exploit_id:
                 continue
@@ -511,30 +520,32 @@ def generate_all_reports(*, settings=None) -> int:
 
             reason = validate_exploit(exploit)
             if reason is not None:
-                store.log_event(
-                    None, "documentation", "report_skipped",
-                    f"{exploit_id}: {reason}",
-                )
+                store.log_event(None, "documentation", "report_skipped",
+                                f"{exploit_id}: {reason}")
                 continue
 
             report = build_report(exploit)
             if report.report_id in seen_ids:
-                store.log_event(
-                    None, "documentation", "report_skipped",
-                    f"{exploit_id}: duplicate report_id {report.report_id}",
-                )
+                store.log_event(None, "documentation", "report_skipped",
+                                f"{exploit_id}: duplicate report_id {report.report_id}")
                 continue
             seen_ids.add(report.report_id)
+            reports_to_write.append(_maybe_enrich(report, exploit, settings))
 
-            report = _maybe_enrich(report, exploit, settings)
+        # Clean slate — but only remove stale VULN-*.md we will NOT rewrite, so a
+        # partial/incomplete DB can never delete a report it cannot rebuild.
+        keep = {f"{r.report_id}.md" for r in reports_to_write}
+        for stale in _REPORTS_DIR.glob("VULN-*.md"):
+            if stale.name not in keep:
+                stale.unlink()
 
+        # Pass 2 — write.
+        for report in reports_to_write:
             store.record_report(report)
             path = write_report_markdown(report)
             written += 1
-            store.log_event(
-                None, "documentation", "report_written",
-                f"{report.report_id} sev={_enum(report.severity)} -> {path.name}",
-            )
+            store.log_event(None, "documentation", "report_written",
+                            f"{report.report_id} sev={_enum(report.severity)} -> {path.name}")
     finally:
         store.close()
     return written

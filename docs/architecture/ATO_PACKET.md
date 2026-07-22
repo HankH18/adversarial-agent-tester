@@ -350,8 +350,38 @@ what each agent did, and in what order.
 
 ## 5. Dependency inventory with versions
 
-The platform's chosen stack. Where a version is not yet fixed, it is marked **"to pin at build (record
-exact version in this table at Final)"** — the honest state at plan stage. Licenses are sourced from
+> **§5a is the AS-BUILT, pinned inventory of what the shipped MVP actually installs and runs. §5b
+> below is the forward-looking target stack from the architecture plan (LangGraph, OpenRouter/Hermes,
+> Burp/ZAP/garak/PyRIT, Postgres, Langfuse) — most of which is *not yet installed*; see
+> [`AS_BUILT.md`](../AS_BUILT.md) for the honest as-built-vs-designed map.**
+
+### 5a. Shipped runtime dependencies (as-built, pinned — verified in the venv)
+
+Resolved from the working `.venv` on 2026-07-22 (Python **3.12.13**, macOS/arm64). Declared in
+`pyproject.toml`; these are the only third-party packages the running platform imports.
+
+| Package | Version | Role | License |
+|---|---|---|---|
+| `httpx` | 0.28.1 | Async HTTP client to the target (throttled) | BSD-3-Clause |
+| `pydantic` | 2.13.4 | Typed inter-agent contracts + domain models | MIT |
+| `pydantic-settings` | 2.14.2 | `.env`/env config loading | MIT |
+| `jsonschema` | 4.26.0 | `/contracts` schema validation + contract tests | MIT |
+| `anthropic` | 0.117.1 | Claude client (LLM-second Judge, mutator, doc prose) | MIT |
+| `tenacity` | 9.1.4 | Retry/backoff | Apache-2.0 |
+| `typer` | 0.27.0 | CLI | MIT |
+| `rich` | 15.0.0 | CLI rendering | MIT |
+| `python-dotenv` | 1.2.2 | `.env` parsing | BSD-3-Clause |
+| `pyyaml` | 6.0.3 | Seed-suite loading | MIT |
+| **SQLite** | stdlib (Python 3.12.13) | Exploit DB, run log, spans, cost ledger | Public domain |
+| _dev:_ `pytest` 8.x, `pytest-asyncio`, `respx`, `ruff` | — | offline test suite (93 tests) | MIT / BSD |
+
+None of the §5b planned components (LangGraph, OpenRouter, Hermes, garak, PyRIT, Burp, ZAP, Semgrep,
+Postgres, Langfuse) are installed in the shipped build.
+
+### 5b. Planned/target stack (forward-looking — not all installed)
+
+The platform's chosen target stack. Where a version is not yet fixed, it is marked **"to pin at build"**
+— the honest state at plan stage. Licenses are sourced from
 [`BUILD_VS_CONFIGURE.md`](BUILD_VS_CONFIGURE.md).
 
 | Component | Role in the platform | License | Version |

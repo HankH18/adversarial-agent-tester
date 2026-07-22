@@ -10,7 +10,7 @@
 > `uv pip install -e '.[dev]'`. The `python -m` form is cwd-independent and always resolves the
 > package; the `adversaryforge <cmd>` console script is equivalent after a clean install.
 > ```bash
-> .venv/bin/pytest -q                              # → 82 passed  (measured 2026-07-21)
+> .venv/bin/pytest -q                              # → 93 passed  (measured 2026-07-22)
 > .venv/bin/python -m adversaryforge.cli seeds     # the seed library + test-design roles
 > .venv/bin/python -m adversaryforge.cli campaign  # run the multi-agent spine live (unauth surface, no keys)
 > .venv/bin/python -m adversaryforge.cli status    # the observability snapshot the Orchestrator reads
@@ -20,7 +20,7 @@
 > Everything above runs with **no `ANTHROPIC_API_KEY` and no session cookie** — the deterministic core
 > is the product; the LLM tiers are additive.
 
-**Measured state at time of writing (2026-07-21):** 82 unit tests pass; the multi-agent spine runs
+**Measured state at time of writing (2026-07-22):** 93 unit tests pass; the multi-agent spine runs
 end-to-end live against `https://agentforge.hankholcomb.com`; 3 professional vulnerability reports are
 generated in `reports/`; 7 versioned JSON-Schema contracts are published in `contracts/`; the SQLite
 substrate answers every required observability question.
@@ -118,7 +118,7 @@ These are the deviations a CISO should weigh most. None is hidden; each has a ra
 
 ### 2.2 Judge: deterministic-first (shipped, tested) + LLM-second (key-gated, subagent-exercised)
 
-**What is fully verified deterministically, today, with no key.** The entire deterministic tier: ten invariant rules over machine-checkable target signals — authorization status codes, the existence-oracle 404 unification, the `withheld`/`served` sentinel, the injection canary echo, write-gate status, PHI-shape scans, info-disclosure markers, latency budgets, and burst-status rate-limit checks (`judge.py:127-284`). These decide most verdicts, are versioned (`RULESET_VERSION`), and are covered by the ground-truth test set — including the invariant *a held defense is never `success`* and the structural info-barrier check (`tests/test_judge_groundtruth.py`, part of the 82 passing tests).
+**What is fully verified deterministically, today, with no key.** The entire deterministic tier: ten invariant rules over machine-checkable target signals — authorization status codes, the existence-oracle 404 unification, the `withheld`/`served` sentinel, the injection canary echo, write-gate status, PHI-shape scans, info-disclosure markers, latency budgets, and burst-status rate-limit checks (`judge.py:127-284`). These decide most verdicts, are versioned (`RULESET_VERSION`), and are covered by the ground-truth test set — including the invariant *a held defense is never `success`* and the structural info-barrier check (`tests/test_judge_groundtruth.py`, part of the 93 passing tests).
 
 **What awaits a key.** The **LLM second pass** — the semantic judgments the deterministic tier deliberately abstains on (did *prose* leak a bare, unlabelled patient name? did an injected instruction *steer* the free-text answer without tripping the canary?). This tier is fully wired (`judge_llm.py`) and reads only the `JudgeView`, but returns `None`/is disabled without `ANTHROPIC_API_KEY`. On this build machine **no key was present**, so where the plan runs Claude Opus in-process, the current build exercises those semantic judgments **via Claude Code subagents at build time** rather than in the live loop. The consequence a CISO must understand: **for a live keyless run, a genuinely semantic exploit that produces no deterministic signal is scored a conservative low-confidence `partial` flagged for review** (`judge.py:90-98`) — it is never silently passed as safe and never falsely confirmed. Drop a key in `.env` and the in-process semantic tier activates with no other change.
 
@@ -160,7 +160,7 @@ The plan's headline drift control (per-run Cohen's-κ gate) is **not yet built**
 
 **Detected by, today:**
 - **A versioned, pinned deterministic ruleset (`RULESET_VERSION`, `judge.py:36`).** The tier that decides most verdicts is code, not a model — it *cannot* drift between runs. A change to it is a diffable version bump, not silent behavior change. Every verdict records the ruleset version in its evidence (`:336`).
-- **A ground-truth calibration test set (`tests/test_judge_groundtruth.py`, in the 82 passing tests).** Pre-labeled known-success / known-safe / known-partial transcripts are scored on every test run; the load-bearing invariant *"a held defense is never scored `success`"* and the structural information-barrier check are asserted. A Judge that started "agreeing with everything" would turn these red.
+- **A ground-truth calibration test set (`tests/test_judge_groundtruth.py`, in the 93 passing tests).** Pre-labeled known-success / known-safe / known-partial transcripts are scored on every test run; the load-bearing invariant *"a held defense is never scored `success`"* and the structural information-barrier check are asserted. A Judge that started "agreeing with everything" would turn these red.
 - **The append-only verdict store** supports verdict-distribution inspection over time (`store.passfail_rates()`, `resilience_trend()`) — a Judge trending toward all-pass or all-fail is visible in the substrate.
 
 **Corrected by:** re-pinning the model version, re-grounding the rubric against the gold set, and — the platform's preferred move — **promoting a proven-unreliable LLM-tier check into the deterministic tier** wherever the target's structured `verification.action`/`claims`/status fields allow it (the target exposes exactly these machine-checkable signals, which is why deterministic-first is possible at all).
@@ -181,4 +181,4 @@ The plan's headline drift control (per-run Cohen's-κ gate) is **not yet built**
 | R6 | Single-shot regression replay; no N-replay flake gate (§1.5) | Low | Invariant assertions branch on deterministic target signals, not stochastic prose | Add N-replay stability check per `ARCHITECTURE.md §7` |
 | R7 | Live *authenticated* attack plane not yet exercised (no test-physician cookie) | Medium for coverage, not correctness | Unauth surface runs live; auth seeds staged, `SessionProvider` pluggable | A session cookie or OAuth backend lands in `.env` |
 
-**Bottom line for the trust decision:** the trust-critical spine — genuine agent separation via versioned contracts, an evaluator that is independent *by type* and *deterministic-first*, a fail-closed regression gate that cannot go green on drift, human approval on critical findings, and a fully inspectable observability substrate — is **built, tested (82 passing), and running live today**. The gaps are concentrated in the **LLM tiers and scale/durability infrastructure**, every one of them is named above, and the two that touch independence (R2, R3) are bounded by the deterministic-first design and closed by configuration rather than redesign.
+**Bottom line for the trust decision:** the trust-critical spine — genuine agent separation via versioned contracts, an evaluator that is independent *by type* and *deterministic-first*, a fail-closed regression gate that cannot go green on drift, human approval on critical findings, and a fully inspectable observability substrate — is **built, tested (93 passing), and running live today**. The gaps are concentrated in the **LLM tiers and scale/durability infrastructure**, every one of them is named above, and the two that touch independence (R2, R3) are bounded by the deterministic-first design and closed by configuration rather than redesign.

@@ -87,11 +87,14 @@ async def test_run_regression_returns_cli_contract_shape(tmp_path, monkeypatch):
         assert isinstance(row["passed"], bool)
 
 
-async def test_all_passed_is_fail_closed_on_errors():
-    # Pure-logic check: the gate must not be green when a case errored.
-    # (Mirrors run_regression's all_passed computation.)
-    failed, errored = 0, 1
-    assert (failed == 0 and errored == 0) is False
+def test_decide_partial_outcome_is_inconclusive_never_a_pass():
+    # A `partial` re-judge (confidence ~0.3, "flagged for review") is inconclusive,
+    # exactly like an unreachable target — it must NOT count as a fixed vuln. This
+    # is the security-relevant false-green the fail-closed gate exists to prevent.
+    d = _decide_case(seed_requires_auth=False, authenticated=False,
+                     outcome=Outcome.partial, prev_status=None)
+    assert d["result"] == "errored"
+    assert d["reappeared"] is False
 
 
 # ── cross-category regression detector ──────────────────────────────────────
@@ -175,6 +178,29 @@ async def test_run_regression_pass_when_defense_holds(tmp_path, monkeypatch):
     case = result["cases"][0]
     assert case["result"] == "passed"
     assert case["outcome"] == "failure"
+
+
+async def test_run_regression_errored_target_fails_closed(tmp_path, monkeypatch):
+    # A dead/unreachable target yields Outcome.error -> 'errored' -> the fail-closed
+    # gate is NOT green (inconclusive can never masquerade as "fixed"). Drives the
+    # real run_regression path, not the all_passed arithmetic in isolation.
+    import httpx
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    _seed_case(store, "df-authz-chat-noauth", "ex_err", "INV-AUTHZ-PATIENT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.post(f"{BASE}/v1/chat").mock(side_effect=httpx.ConnectError("boom"))
+        result = await run_regression(settings=st)
+
+    assert result["total"] == 1
+    assert result["errored"] == 1
+    assert result["passed"] == 0 and result["failed"] == 0
+    assert result["all_passed"] is False
+    assert result["cases"][0]["result"] == "errored"
+    assert result["cases"][0]["outcome"] == "error"
 
 
 async def test_run_regression_fails_and_reopens_resolved_exploit(tmp_path, monkeypatch):

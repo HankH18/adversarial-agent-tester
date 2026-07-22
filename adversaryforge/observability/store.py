@@ -408,8 +408,11 @@ class Store:
     # ── helpers ────────────────────────────────────────────────────────────
     @staticmethod
     def _dedupe_key(exploit: ConfirmedExploit) -> str:
-        seq = _enum(exploit.category) + "|" + "|".join(
-            f"{t.role}:{t.content}" for t in exploit.minimal_transcript
+        # Key on the ATTACKER-authored sequence + the invariant only. Target turns
+        # (answers, latency-bearing burst results, LLM prose) vary run-to-run, so
+        # including them would defeat "no duplicate for the same attack sequence".
+        seq = _enum(exploit.category) + "|" + (exploit.target_invariant or "") + "|" + "|".join(
+            t.content for t in exploit.minimal_transcript if t.role == "attacker"
         )
         return hashlib.sha256(seq.encode()).hexdigest()
 

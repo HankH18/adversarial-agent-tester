@@ -13,10 +13,16 @@ hole opened another. Built to the standard of a hospital CISO."*
 ## 0. Setup (before recording)
 ```bash
 cd adversarial-agent-tester
-uv venv --python 3.12 && uv pip install -e '.[dev]'    # one clean install
+uv pip install -e .        # NOTE: quote extras — uv pip install -e ".[dev]" — bare [dev] gets glob-eaten in zsh
 rm -f data/adversaryforge.sqlite*                       # fresh baseline for the demo
 ```
 Have these ready to show: `ARCHITECTURE.md` (the agent diagram), `THREAT_MODEL.md`, and a terminal.
+If `adversaryforge <cmd>` isn't found after install, use the equivalent `python -m adversaryforge.cli <cmd>`.
+
+> **Precondition for §5b (the LLM-panel beat):** you must have `ANTHROPIC_API_KEY` set (in `.env` or
+> exported). *With* a key, the escalated Judge verdict shows `tier=llm-panel` + a real `llm.call` span
+> with cost; *without* one, that same span shows `tier=fallback` at $0 — a genuinely keyless run has no
+> LLM in the loop (which is itself an honest thing to show). All other beats work fully keyless.
 
 ---
 

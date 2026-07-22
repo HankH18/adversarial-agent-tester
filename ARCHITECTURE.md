@@ -590,6 +590,13 @@ LangGraph. Framework for orchestration; schema for the contract.
 *Required section. Every AI-powered role, the deterministic verification or human gate that follows it,
 and the residual risk.*
 
+> **As-built note (deviation from this plan):** the table below describes the *designed* model tiers.
+> The shipped MVP runs **Claude for both the Red Team and the Judge LLM tiers** (only Anthropic keys
+> were available); the planned Hermes-via-OpenRouter attacker and the "different model family"
+> independence leg are config-switchable but **not active as shipped**. This narrows the structural
+> independence to the information barrier + deterministic-first tiers (both real and tested). See
+> [`docs/AS_BUILT.md §3`](docs/AS_BUILT.md) and residual risk **R2** for the full honest state.
+
 | AI-powered role | Model | Deterministic check / human gate that follows | Residual risk |
 |---|---|---|---|
 | **Red Team — attack generation & mutation** | Hermes 4 (hosted, low-refusal, Llama-based) | Nothing it emits is trusted as instruction; every attempt is graded by an independent Judge (different family); it has no write scope, is sandboxed, and never processes PHI (synthetic data only) | May generate genuinely harmful content (mitigated: sandboxed, output-only-as-data, no write scope); may fixate on one technique (mitigated: Orchestrator's ε-greedy scheduling) |
