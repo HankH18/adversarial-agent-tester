@@ -73,6 +73,13 @@ def status():
                       f"success_rate={row['success_rate']}  ({row['successes']}/{row['total']})")
 
     console.print("\n[bold]Cost[/bold]  " + str(store.cost_summary()))
+    by_agent = store.cost_by_agent()
+    if by_agent:
+        console.print("[bold]Cost by agent[/bold]")
+        for row in by_agent:
+            console.print(f"  {row['agent']}: ${row['usd']} "
+                          f"({row['llm_calls']} calls, "
+                          f"{row['input_tokens']}+{row['output_tokens']} tok)")
 
 
 @app.command()

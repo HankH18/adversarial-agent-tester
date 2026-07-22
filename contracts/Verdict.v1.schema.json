@@ -58,7 +58,7 @@
       "default": "deterministic",
       "enum": [
         "deterministic",
-        "llm-panel",
+        "llm-adjudicator",
         "hybrid"
       ],
       "title": "Method",

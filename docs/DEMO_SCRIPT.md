@@ -19,8 +19,8 @@ rm -f data/adversaryforge.sqlite*                       # fresh baseline for the
 Have these ready to show: `ARCHITECTURE.md` (the agent diagram), `THREAT_MODEL.md`, and a terminal.
 If `adversaryforge <cmd>` isn't found after install, use the equivalent `python -m adversaryforge.cli <cmd>`.
 
-> **Precondition for §5b (the LLM-panel beat):** you must have `ANTHROPIC_API_KEY` set (in `.env` or
-> exported). *With* a key, the escalated Judge verdict shows `tier=llm-panel` + a real `llm.call` span
+> **Precondition for §5b (the LLM-adjudicator beat):** you must have `ANTHROPIC_API_KEY` set (in `.env` or
+> exported). *With* a key, the escalated Judge verdict shows `tier=llm-adjudicator` + a real `llm.call` span
 > with cost; *without* one, that same span shows `tier=fallback` at $0 — a genuinely keyless run has no
 > LLM in the loop (which is itself an honest thing to show). All other beats work fully keyless.
 
@@ -85,7 +85,8 @@ adversaryforge trace          # renders the last run's per-agent span tree
 ```
 Point at two `judge.evaluate` spans side by side: most say **`tier=deterministic` (~0.3ms)** — pure
 code decided them; the one the deterministic rules *couldn't* settle escalated to
-**`tier=llm-panel → judge.llm_adjudicate → llm.call model=claude-opus-4-8` (~2s)**. That is the whole
+**`tier=llm-adjudicator → judge.llm_adjudicate → llm.call model=claude-opus-4-8` (~2s)** (a single
+adjudicator call, not a multi-vote panel — see AS_BUILT §1.3). That is the whole
 "AI only where it's irreducible" thesis in a single screen — and `status` shows the exact USD/tokens
 that one call cost. The trace also shows every `target.request` (method/path/status/latency) and, per
 Judge decision, the exact `judge.rule` that fired with its rationale.

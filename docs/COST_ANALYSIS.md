@@ -203,10 +203,11 @@ is moved to a cheaper model and then off-API entirely as volume justifies it.
 Cost is metered and budgeted, not observed after the fact:
 
 - **Per-agent metering.** `Store.log_cost(run_id, agent, model, input_tok, output_tok,
-  usd)` records spend tagged by *agent* (`redteam`, `judge`, `documentation`), so
-  `cost_summary()` answers "how much did the Red Team spend vs. the Judge," not just a
-  platform total. Every mutation logs its cost via
-  `Orchestrator._mutate_and_run → store.log_cost(...)`.
+  usd)` records spend tagged by *agent* (`redteam`, `judge`, `documentation`).
+  `cost_summary()` returns the per-run / platform total; `cost_by_agent()` groups that
+  same ledger by agent — answering "how much did the Red Team spend vs. the Judge," not
+  just a platform total — and `adversaryforge status` prints both. Every mutation logs
+  its cost via `Orchestrator._mutate_and_run → store.log_cost(...)`.
 - **A no-signal halt — enforced in the loop.** `settings.nosignal_halt_usd` (default
   **$2.00**, `ADVERSARYFORGE_NOSIGNAL_HALT_USD`) is the governor's budget knob, and it
   is now **actively enforced**: after every seed, `run_campaign` reads the live per-run

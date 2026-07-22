@@ -384,6 +384,21 @@ class Store:
         return {"usd": round(r["usd"], 6), "input_tokens": r["it"],
                 "output_tokens": r["ot"], "llm_calls": r["calls"]}
 
+    def cost_by_agent(self, run_id: str | None = None) -> list[dict[str, Any]]:
+        """Spend broken down per agent role (redteam / judge / documentation) — answers
+        "how much did the Red Team spend vs. the Judge," not just a platform total.
+        Reads the same per-agent-tagged cost_ledger rows as cost_summary, GROUP BY agent."""
+        q = ("SELECT agent, COALESCE(SUM(usd),0) usd, COALESCE(SUM(input_tokens),0) it, "
+             "COALESCE(SUM(output_tokens),0) ot, COUNT(*) calls FROM cost_ledger")
+        params: tuple = ()
+        if run_id:
+            q += " WHERE run_id=?"
+            params = (run_id,)
+        q += " GROUP BY agent ORDER BY usd DESC"
+        return [{"agent": r["agent"], "usd": round(r["usd"], 6), "input_tokens": r["it"],
+                 "output_tokens": r["ot"], "llm_calls": r["calls"]}
+                for r in self._conn.execute(q, params).fetchall()]
+
     def agent_timeline(self, run_id: str, limit: int = 200) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             "SELECT ts, agent, action, detail FROM events WHERE run_id=? "

@@ -137,7 +137,7 @@ class Verdict(_Versioned):
     outcome: Outcome
     severity: Severity
     confidence: float = Field(ge=0.0, le=1.0)
-    method: Literal["deterministic", "llm-panel", "hybrid"] = "deterministic"
+    method: Literal["deterministic", "llm-adjudicator", "hybrid"] = "deterministic"
     rationale: str
     invariant_violated: str | None = None
     evidence: dict[str, Any] = Field(
