@@ -59,7 +59,7 @@ async def test_run_campaign_cost_governor_halts_on_no_signal(tmp_path, monkeypat
                             mutator=None, n_variants=8):
         calls["n"] += 1
         self._store.log_cost(run_id, "redteam", "test", 0, 0, 1.0)  # over budget
-        return (None, _fail_verdict())  # no confirmed exploit -> no signal
+        return (None, _fail_verdict(), 0)  # no confirmed exploit -> no signal
 
     monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
     with respx.mock(assert_all_called=False) as router:
@@ -83,7 +83,7 @@ async def test_cost_governor_does_not_halt_when_finding_signal_without_new_explo
         self._store.log_cost(run_id, "redteam", "test", 0, 0, 1.0)  # over the 0.5 budget
         return (None, Verdict(verdict_id="vd", attempt_id="at", outcome=Outcome.success,
                               severity=Severity.high, confidence=0.9, method="deterministic",
-                              rationale="found a (known) vuln"))  # a SUCCESS, but records no exploit
+                              rationale="found a (known) vuln"), 0)  # a SUCCESS, no new exploit
 
     monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
     with respx.mock(assert_all_called=False) as router:
@@ -93,6 +93,28 @@ async def test_cost_governor_does_not_halt_when_finding_signal_without_new_explo
     assert result.successes >= 1
 
 
+async def test_cost_governor_counts_mutation_breakthroughs_as_signal(tmp_path, monkeypatch):
+    # A base seed that returns PARTIAL but whose mutations broke through IS producing
+    # signal. The governor keys on total confirmed successes (base + mutation), so a
+    # producing run must NOT be halted as no-signal even when the base verdict is partial.
+    st = _settings(tmp_path, monkeypatch, budget="0.5")
+
+    async def fake_run_seed(self, seed, directive, executor, judge, run_id,
+                            mutator=None, n_variants=8):
+        self._store.log_cost(run_id, "redteam", "test", 0, 0, 1.0)  # over the 0.5 budget
+        # base verdict is PARTIAL, but 2 mutation children broke through (3rd return value)
+        return (None, Verdict(verdict_id="vd", attempt_id="at", outcome=Outcome.partial,
+                              severity=Severity.info, confidence=0.5, method="deterministic",
+                              rationale="near miss, but mutated variants broke through"), 2)
+
+    monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        result = await plat.run_campaign(settings=st, limit=1)
+    assert result.halted_no_signal is False   # mutation breakthroughs ARE signal → not halted
+    assert result.successes >= 2
+
+
 async def test_run_campaign_binds_tracer_during_the_loop(tmp_path, monkeypatch):
     st = _settings(tmp_path, monkeypatch, budget="0")  # governor disabled
 
@@ -100,7 +122,7 @@ async def test_run_campaign_binds_tracer_during_the_loop(tmp_path, monkeypatch):
                             mutator=None, n_variants=8):
         with trace("wiring.probe", "judge", seed=seed.id) as sp:  # only records if a tracer is bound
             sp.set("ok", True)
-        return (None, _fail_verdict())
+        return (None, _fail_verdict(), 0)
 
     monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
     with respx.mock(assert_all_called=False) as router:
@@ -124,7 +146,7 @@ async def test_run_campaign_exploits_new_is_a_delta(tmp_path, monkeypatch):
         if not inserted["done"]:
             self._store.record_exploit(_exploit("ex_new", "new-this-run"))
             inserted["done"] = True
-        return (None, _fail_verdict())
+        return (None, _fail_verdict(), 0)
 
     monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
     with respx.mock(assert_all_called=False) as router:
@@ -175,7 +197,7 @@ async def test_run_campaign_counts_mutations_on_partial_chat_seed(tmp_path, monk
                             mutator=None, n_variants=8):
         return (None, Verdict(verdict_id="vd", attempt_id="at", outcome=Outcome.partial,
                               severity=Severity.info, confidence=0.5, method="deterministic",
-                              rationale="near miss"))
+                              rationale="near miss"), 0)
     monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
 
     with respx.mock(assert_all_called=False) as router:
@@ -257,6 +279,26 @@ def test_seed_demo_populates_a_fresh_store_and_is_excluded_from_selection(tmp_pa
     # idempotent: a second call dedupes (no duplicate exploits)
     plat.seed_demo(settings=st)
     assert len(Store(st.db_path).list_exploits()) == res["findings"]
+
+
+def test_report_preserves_committed_reports_when_db_holds_only_demo(tmp_path, monkeypatch):
+    # The documented `seed-demo` → `report` flow (and the CI smoke) must NEVER delete a
+    # committed vuln report: demo findings are excluded from report generation, so a
+    # pre-existing report survives and no demo stubs are written into the deliverable dir.
+    from adversaryforge.agents.documentation import generate_all_reports
+
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    committed = reports_dir / "VULN-committed99.md"
+    committed.write_text("# a real, committed finding — must not be deleted\n", encoding="utf-8")
+
+    plat.seed_demo(settings=st)                       # DB now holds demo exploits only
+    written = generate_all_reports(settings=st)
+
+    assert written == 0                               # demo findings produce no reports
+    assert committed.exists()                         # the committed report was NOT deleted
+    assert list(reports_dir.glob("VULN-*.md")) == [committed]  # and no demo stub was written
 
 
 def test_meter_judge_llm_logs_delta_not_cumulative(tmp_path):

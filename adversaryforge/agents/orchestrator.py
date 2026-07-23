@@ -122,7 +122,7 @@ class Orchestrator:
     async def run_seed(
         self, seed: Seed, directive: CampaignDirective, executor: SeedExecutor,
         judge: Judge, run_id: str, mutator=None, n_variants: int = 8,
-    ) -> tuple[AttackAttempt, Verdict]:
+    ) -> tuple[AttackAttempt, Verdict, int]:
         with trace("orchestrator.run_seed", "orchestrator", seed=seed.id,
                    category=_enum(seed.category), invariant=seed.target_invariant) as sp:
             attempt = await executor.run(seed, directive.directive_id)
@@ -137,20 +137,24 @@ class Orchestrator:
             sp.update(outcome=_enum(verdict.outcome), severity=_enum(verdict.severity),
                       method=verdict.method)
 
+            breakthroughs = 0
             if verdict.outcome == Outcome.success:
                 self._promote(seed, attempt, verdict, run_id)
             elif verdict.outcome == Outcome.partial and mutator is not None:
                 # A partial is a foothold: autonomously generate N variants to probe
                 # for a version that breaks through (the core Red Team behavior).
-                await self._mutate_and_run(seed, attempt, verdict, directive, executor,
-                                           judge, run_id, mutator, n_variants)
-            return attempt, verdict
+                breakthroughs = await self._mutate_and_run(
+                    seed, attempt, verdict, directive, executor, judge, run_id,
+                    mutator, n_variants)
+            # breakthroughs = confirmed mutation successes; the caller counts them as
+            # signal so a partial→mutation→success run is not mistaken for "no signal".
+            return attempt, verdict, breakthroughs
 
     async def _mutate_and_run(self, seed, parent, verdict, directive, executor,
-                              judge, run_id, mutator, n) -> None:
+                              judge, run_id, mutator, n) -> int:
         base_messages = self._seed_messages(seed)
         if not base_messages:
-            return  # nothing message-bearing to mutate (e.g. pure HTTP probe)
+            return 0  # nothing message-bearing to mutate (e.g. pure HTTP probe)
         with trace("redteam.mutate", "redteam", seed=seed.id, n=n,
                    trigger="partial") as msp:
             self._store.log_event(run_id, "redteam", "mutate",
@@ -183,6 +187,7 @@ class Orchestrator:
                                               f"{seed.id}#mut{i} broke through after a partial")
                         self._promote(seed, child, cv, run_id, override_messages=variant)
             msp.set("breakthroughs", breakthroughs)
+        return breakthroughs
 
     @staticmethod
     def _seed_messages(seed: Seed) -> list[str]:

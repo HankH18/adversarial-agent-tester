@@ -430,6 +430,18 @@ class Store:
         q += " ORDER BY created_at DESC"
         return [dict(r) for r in self._conn.execute(q, params).fetchall()]
 
+    def demo_exploit_ids(self) -> set[str]:
+        """exploit_ids whose originating attempt belongs to a `mode='demo'` run. Reports
+        are for REAL findings, so the report generator excludes these — and therefore
+        never prunes the committed `reports/` just because `seed-demo` populated the DB."""
+        rows = self._conn.execute(
+            "SELECT e.exploit_id FROM exploits e "
+            "JOIN attempts a ON a.attempt_id = e.attempt_id "
+            "JOIN runs r ON r.run_id = a.run_id "
+            "WHERE r.mode = 'demo'"
+        ).fetchall()
+        return {r["exploit_id"] for r in rows}
+
     def list_regression_cases(self) -> list[RegressionCandidate]:
         rows = self._conn.execute("SELECT payload FROM regression_cases").fetchall()
         return [RegressionCandidate.model_validate_json(r["payload"]) for r in rows]

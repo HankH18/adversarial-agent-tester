@@ -541,9 +541,14 @@ def generate_all_reports(*, settings=None) -> int:
     seen_ids: set[str] = set()
     try:
         rows = store.list_exploits()
-        # NEVER wipe committed reports when there is nothing to regenerate — e.g. a
-        # fresh clone whose SQLite DB is git-ignored and empty. Only the current DB's
-        # findings drive reports/, but an empty DB must not destroy the committed set.
+        # Reports are for REAL findings only. Exclude illustrative `seed-demo` exploits so
+        # the documented `seed-demo` → `report` flow (and the CI smoke) can NEVER prune the
+        # committed reports/ deliverable and replace it with demo stubs.
+        demo_ids = store.demo_exploit_ids()
+        rows = [r for r in rows if r.get("exploit_id") not in demo_ids]
+        # NEVER wipe committed reports when there is nothing to regenerate — e.g. a fresh
+        # clone whose SQLite DB is git-ignored and empty, or a DB holding only demo
+        # findings. An empty/real-empty set must not destroy the committed reports.
         if not rows:
             return 0
 

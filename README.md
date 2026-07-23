@@ -89,7 +89,7 @@ after a clean install — see the note above).
 | `campaign` | Orchestrator selects → Red Team executes → Judge evaluates → exploits stored |
 | `status` | Coverage per category, pass/fail rates, resilience trend, open findings, cost |
 | `seeds` | List the seed library with test-design roles (boundary/invariant/regression) |
-| `regress` | Re-run confirmed exploits; exits non-zero unless the fail-closed gate is GREEN |
+| `regress` | Re-run confirmed exploits; exits non-zero unless the fail-closed gate is GREEN. **On the shipped/demo data this is correctly RED** — the live target is still rate-limit-vulnerable, so the gate refuses to go green until the target is fixed. That is the harness working, not a platform failure. |
 | `report` | (Re)generate professional vulnerability reports |
 | `trace [run_id]` | Render the fine-grained per-agent execution trace (span tree) for a run |
 

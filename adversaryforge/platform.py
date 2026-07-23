@@ -174,9 +174,9 @@ async def _drive_seeds(store, orch, seeds, directive, executor, judge, run_id,
     tracer = Tracer(store, run_id) if settings.trace_enabled else None
     with use_tracer(tracer):
         for seed in seeds:
-            _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
-                                             executor, judge, run_id,
-                                             mutator=mutator, n_variants=n_variants)
+            _, verdict, breakthroughs = await orch.run_seed(
+                seed, directive or _fallback_directive(seed), executor, judge, run_id,
+                mutator=mutator, n_variants=n_variants)
             out = _enum(verdict.outcome)
             by_outcome[out] = by_outcome.get(out, 0) + 1
             if verdict.outcome == Outcome.success:
@@ -184,6 +184,9 @@ async def _drive_seeds(store, orch, seeds, directive, executor, judge, run_id,
             elif (verdict.outcome == Outcome.partial and mutator is not None
                   and Orchestrator._seed_messages(seed)):  # only counts real mutations
                 mutations_run += 1
+            # A partial base seed whose mutations broke through IS signal — count those
+            # confirmed successes so the cost governor doesn't halt a producing run.
+            successes += breakthroughs
 
             # Cost governor: stop burning budget once it produces no signal. "Signal" is
             # SUCCESS verdicts this run, not NEW exploit rows — record_exploit dedupes
@@ -226,6 +229,24 @@ async def resume_campaign(run_id: str | None = None, *, settings: Settings | Non
     orch = Orchestrator(store, library)
     judge = Judge(llm_adjudicator=build_llm_adjudicator(settings))
     mutator = build_mutator(settings)
+
+    # Same Judge drift gate as run_campaign: a resumed campaign records verdicts too, so
+    # it must also calibrate against the frozen gold set and FAIL CLOSED on drift — the
+    # "every campaign calibrates" invariant holds on the resume path as well.
+    cal = calibrate_judge(judge, settings.judge_kappa_threshold)
+    store.log_event(rid, "judge", "calibration",
+                    f"kappa={cal.kappa} passed={cal.passed} "
+                    f"({cal.agreements}/{cal.n} gold cases, threshold {cal.threshold})")
+    if not cal.passed:
+        store.log_event(rid, "judge", "calibration_halt",
+                        f"Judge drift: kappa {cal.kappa} < {cal.threshold}; "
+                        f"disagreements={cal.disagreements}")
+        store.end_run(rid, store.cost_summary(rid)["usd"])
+        return CampaignResult(
+            run_id=rid, target_version=run.get("target_version") or "unknown",
+            authenticated=authed, total=0, successes=0, by_outcome={}, exploits_new=0,
+            directive_rationale="halted: Judge failed calibration (drift gate)",
+            calibration_kappa=cal.kappa, calibration_passed=False)
 
     # Reconstruct the ORIGINAL plan (persisted at start) and skip completed seeds.
     plan = store.get_run_plan(rid) or [s.id for s in library.runnable(authenticated=authed)]

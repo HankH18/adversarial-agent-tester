@@ -116,6 +116,15 @@ class SeedExecutor:
         n = min(step.burst_count, 20)
         base = self._client._adapter.base_url  # noqa: SLF001
         url = base + step.path if step.path.startswith("/") else step.path
+        # Defense-in-depth: the burst fires through its OWN client (concurrency is the
+        # whole point of the probe, so it can't go through the throttled TargetClient),
+        # but it must still honor the same host-allowlist blast-radius boundary — never
+        # fire at a host the operator has not authorized.
+        if not self._client._host_allowed(url):  # noqa: SLF001
+            return TranscriptTurn(
+                role="target", content=f"burst refused: off-allowlist host in {url!r}",
+                http_status=0, raw={"_burst_statuses": [], "_burst_elapsed_ms": 0.0,
+                                    "error": "blocked_by_host_allowlist"})
         started = __import__("time").perf_counter()
         async with httpx.AsyncClient(timeout=15.0) as c:
             results = await asyncio.gather(

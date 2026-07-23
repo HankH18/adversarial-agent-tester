@@ -22,7 +22,7 @@
 > is the product; the LLM tiers are additive.
 
 **Measured state at time of writing (2026-07-22):** the full unit-test suite passes; the multi-agent spine runs
-end-to-end live against `https://agentforge.hankholcomb.com`; 3 professional vulnerability reports are
+end-to-end live against `https://agentforge.hankholcomb.com`; 5 professional vulnerability reports are
 generated in `reports/`; 7 versioned JSON-Schema contracts are published in `contracts/`; the SQLite
 substrate answers every required observability question.
 

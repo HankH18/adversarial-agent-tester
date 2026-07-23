@@ -87,10 +87,11 @@ async def test_partial_triggers_mutation_and_promotes_a_breakthrough(tmp_path):
     directive = CampaignDirective(directive_id="d", category=AttackCategory.prompt_injection,
                                   rationale="t", target_invariant="INV-INJECTION-INERT")
 
-    _, verdict = await orch.run_seed(_chat_seed(), directive, ex, judge, run_id,
-                                     mutator=mutator, n_variants=8)
+    _, verdict, breakthroughs = await orch.run_seed(_chat_seed(), directive, ex, judge, run_id,
+                                                    mutator=mutator, n_variants=8)
 
     assert verdict.outcome == Outcome.partial          # base was a partial
+    assert isinstance(breakthroughs, int)              # mutation-breakthrough count returned
     assert any(g == 1 for g, _ in ex.runs)             # variants actually executed
     assert len(ex.runs) == 1 + 8                        # base + 8 mutations
     # The breakthrough variant was promoted to a confirmed exploit.
