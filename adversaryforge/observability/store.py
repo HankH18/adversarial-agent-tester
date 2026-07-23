@@ -332,22 +332,37 @@ class Store:
         return out
 
     # ── reads (the observability questions) ────────────────────────────────
-    def coverage_by_category(self) -> dict[str, int]:
-        rows = self._conn.execute(
-            "SELECT category, COUNT(*) n FROM attempts GROUP BY category"
-        ).fetchall()
-        return {r["category"]: r["n"] for r in rows}
+    def coverage_by_category(self, campaign_only: bool = False) -> dict[str, int]:
+        # campaign_only excludes regression-replay runs. The Orchestrator uses it so
+        # running `regress` (which writes attempts under a mode='regression' run) does
+        # NOT perturb the deterministic, reproducible target selection. `status` leaves
+        # it False to show ALL activity.
+        if campaign_only:
+            q = ("SELECT a.category category, COUNT(*) n FROM attempts a "
+                 "JOIN runs r ON r.run_id=a.run_id WHERE r.mode NOT IN ('regression','demo') "
+                 "GROUP BY a.category")
+        else:
+            q = "SELECT category, COUNT(*) n FROM attempts GROUP BY category"
+        return {r["category"]: r["n"] for r in self._conn.execute(q).fetchall()}
 
-    def passfail_rates(self, target_version: str | None = None) -> dict[str, dict[str, int]]:
+    def passfail_rates(self, target_version: str | None = None,
+                       campaign_only: bool = False) -> dict[str, dict[str, int]]:
         q = ("SELECT a.category cat, v.outcome out, COUNT(*) n FROM verdicts v "
              "JOIN attempts a ON a.attempt_id=v.attempt_id ")
-        params: tuple = ()
+        conds: list[str] = []
+        params: list[Any] = []
+        if target_version or campaign_only:
+            q += "JOIN runs r ON r.run_id=v.run_id "
         if target_version:
-            q += "JOIN runs r ON r.run_id=v.run_id WHERE r.target_version=? "
-            params = (target_version,)
+            conds.append("r.target_version=?")
+            params.append(target_version)
+        if campaign_only:
+            conds.append("r.mode NOT IN ('regression','demo')")  # replays/demo must not skew selection
+        if conds:
+            q += "WHERE " + " AND ".join(conds) + " "
         q += "GROUP BY a.category, v.outcome"
         out: dict[str, dict[str, int]] = {}
-        for r in self._conn.execute(q, params).fetchall():
+        for r in self._conn.execute(q, tuple(params)).fetchall():
             out.setdefault(r["cat"], {})[r["out"]] = r["n"]
         return out
 

@@ -139,6 +139,15 @@ something," not "the target moved."
 - **Existing defenses vs. gap:** de-identify + distill + telemetry pseudonymization + PHI-scan CI job are
   a layered egress control. **Gaps:** bare-name (NER) and bare-integer detection — both maintainer-admitted;
   the Judge's LLM tier targets exactly the paraphrase/bare-name cases the shape-scrub concedes.
+- **The *platform's own* persistence (deliberate, documented):** when the platform confirms a leak, the
+  leaked token can be echoed into *its own* local store — the Judge span `response_preview` and the
+  verdict `rationale`/`observed` prose. This is an accepted risk, not an oversight: the target is
+  **synthetic-data-only** (never real PHI, per scope) and the SQLite store + traces are **git-ignored,
+  operator-local artifacts**. The residual only bites if a trace or the DB is *shared* (a bug report, a
+  demo hand-off), which could carry a real-looking identifier. The mitigation — an **opt-in redaction
+  pass** that masks MRN/SSN-shaped tokens before write — is deliberately *off by default* so a finding's
+  evidence stays fully inspectable; **treat any exported trace or DB copy as sensitive** until that flag
+  ships. (Decision recorded rather than built: the risk is theoretical under synthetic-only scope.)
 
 ### 3.2 Cross-patient exposure — **P0**
 - **Attack surface:** `POST /v1/rounds/start` accepts a **caller-supplied patient list with no per-patient

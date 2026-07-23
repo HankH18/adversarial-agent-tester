@@ -247,6 +247,70 @@ async def resume_campaign(run_id: str | None = None, *, settings: Settings | Non
         mutations_run=mutations_run, halted_no_signal=halted)
 
 
+def seed_demo(*, settings: Settings | None = None) -> dict:
+    """Populate the store with a few ILLUSTRATIVE confirmed findings + regression cases
+    under a mode='demo' run, so a FRESH CLONE can immediately exercise
+    status / regress / report / trace WITHOUT a live campaign (the most impressive parts
+    otherwise show empty until a live run). Uses REAL seed ids so `regress` can actually
+    replay them; idempotent (record_exploit dedupes); mode='demo' is excluded from
+    target-selection metrics so it never skews a real campaign."""
+    from adversaryforge.contracts import (
+        AttackAttempt,
+        ConfirmedExploit,
+        RegressionCandidate,
+        Severity,
+        TranscriptTurn,
+        Verdict,
+    )
+
+    settings = settings or get_settings()
+    store = Store(settings.db_path)
+    by_id = {s.id: s for s in SeedLibrary.load().seeds}
+    demo = [
+        ("dos-rate-limit-absence", Severity.medium,
+         "No throttling across 12 rapid requests (no 429) — rate limiting absent. [demo]"),
+        ("di-ready-enum", Severity.low,
+         "Anonymous 200 discloses internal state: dependencies, openemr, langfuse. [demo]"),
+        ("di-openapi-exposed", Severity.low,
+         "Anonymous 200 exposes the full OpenAPI contract to unauthenticated callers. [demo]"),
+    ]
+    run_id = store.start_run(settings.target_base_url, "demo", "demo", False,
+                             notes="seed-demo: illustrative findings, not a live run")
+    written = 0
+    for i, (sid, sev, observed) in enumerate(demo):
+        seed = by_id.get(sid)
+        if seed is None:
+            continue
+        transcript = [TranscriptTurn(role="attacker", content=f"[demo] probe: {sid}"),
+                      TranscriptTurn(role="target", content=observed, http_status=200)]
+        attempt = AttackAttempt(
+            attempt_id=f"demo_at_{i}", directive_id="demo", seed_id=seed.id,
+            category=seed.category, subcategory=seed.subcategory,
+            target_invariant=seed.target_invariant, expected_safe=seed.expected_safe,
+            owasp_web=seed.owasp_web, owasp_llm=seed.owasp_llm, transcript=transcript)
+        verdict = Verdict(
+            verdict_id=f"demo_vd_{i}", attempt_id=attempt.attempt_id, outcome=Outcome.success,
+            severity=sev, confidence=0.85, method="deterministic", rationale=observed,
+            invariant_violated=seed.target_invariant, is_regression_candidate=True)
+        store.record_attempt(run_id, attempt)
+        store.record_verdict(run_id, verdict)
+        exploit = ConfirmedExploit(
+            exploit_id=f"ex_demo{i:08d}", attempt_id=attempt.attempt_id,
+            verdict_id=verdict.verdict_id, category=seed.category, subcategory=seed.subcategory,
+            severity=sev, target_invariant=seed.target_invariant, minimal_transcript=transcript,
+            expected_safe=seed.expected_safe, observed=observed,
+            owasp_web=seed.owasp_web, owasp_llm=seed.owasp_llm, target_version="demo")
+        if store.record_exploit(exploit):
+            written += 1
+            store.record_regression_case(RegressionCandidate(
+                case_id=f"rc_demo{i}", exploit_id=exploit.exploit_id, category=seed.category,
+                request={"seed_id": seed.id, "steps": [s.model_dump() for s in seed.steps]},
+                assertion={"kind": "invariant_holds", "invariant": seed.target_invariant},
+                severity=sev))
+    store.end_run(run_id, 0.0)
+    return {"run_id": run_id, "findings": written}
+
+
 def _count_exploits(store: Store) -> int:
     return store._conn.execute("SELECT COUNT(*) n FROM exploits").fetchone()["n"]  # noqa: SLF001
 

@@ -216,6 +216,28 @@ async def test_resume_with_no_incomplete_run_raises(tmp_path, monkeypatch):
         await plat.resume_campaign(None, settings=st)        # nothing to resume
 
 
+def test_seed_demo_populates_a_fresh_store_and_is_excluded_from_selection(tmp_path, monkeypatch):
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    res = plat.seed_demo(settings=st)
+    assert res["findings"] >= 2
+    store = Store(st.db_path)
+    # confirmed exploits + replayable regression cases exist → status/regress/report work
+    assert len(store.list_exploits()) == res["findings"]
+    assert len(store.list_regression_cases()) == res["findings"]
+    assert store.get_run(res["run_id"])["mode"] == "demo"
+    # demo is visible in observability (status) but EXCLUDED from target selection metrics
+    assert store.coverage_by_category() != {}
+    assert store.coverage_by_category(campaign_only=True) == {}
+    # each regression case names a REAL seed so `regress` can actually replay it
+    lib_ids = {s.id for s in __import__("adversaryforge.redteam.seeds",
+                                        fromlist=["SeedLibrary"]).SeedLibrary.load().seeds}
+    for case in store.list_regression_cases():
+        assert case.request["seed_id"] in lib_ids
+    # idempotent: a second call dedupes (no duplicate exploits)
+    plat.seed_demo(settings=st)
+    assert len(Store(st.db_path).list_exploits()) == res["findings"]
+
+
 def test_meter_judge_llm_logs_delta_not_cumulative(tmp_path):
     # The Judge adjudicator cost is cumulative; the meter must log per-call DELTAS
     # into the ledger (double-counting would corrupt the cost governor + analysis).

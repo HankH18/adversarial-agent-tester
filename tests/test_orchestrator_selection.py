@@ -70,3 +70,26 @@ def test_saturated_all_defended_category_is_penalized(tmp_path):
                                           confidence=0.9, method="deterministic", rationale="x"))
     reason = {c: r for c, _, r in orch.score_categories(authenticated=True)}["denial_of_service"]
     assert "sat-1" in reason  # saturation penalty applied
+
+
+def test_regression_replay_attempts_do_not_skew_selection(tmp_path):
+    # Running `regress` writes attempts under a mode='regression' run. Those replays must
+    # NOT perturb deterministic target selection — score_categories reads campaign_only,
+    # so a campaign→regress→campaign sequence selects reproducibly.
+    orch = _orch(tmp_path)
+    store = orch._store  # noqa: SLF001
+    rid = store.start_run("http://t", "v", "regression", False)  # a REGRESSION run
+    for i in range(8):  # would saturate denial_of_service if these replays were counted
+        at = AttackAttempt(attempt_id=f"r{i}", directive_id="d",
+                           category=AttackCategory.denial_of_service,
+                           target_invariant="INV-RATE-LIMIT", expected_safe="x",
+                           transcript=[TranscriptTurn(role="attacker", content="p")])
+        store.record_attempt(rid, at)
+        store.record_verdict(rid, Verdict(verdict_id=f"rv{i}", attempt_id=f"r{i}",
+                                          outcome=Outcome.failure, severity=Severity.info,
+                                          confidence=0.9, method="deterministic", rationale="x"))
+    reason = {c: r for c, _, r in orch.score_categories(authenticated=True)}["denial_of_service"]
+    assert "sat-1" not in reason  # replays excluded → no saturation contributed by regress
+    # The filter itself: campaign_only hides the replays; the unfiltered view still shows them.
+    assert store.coverage_by_category(campaign_only=True).get("denial_of_service", 0) == 0
+    assert store.coverage_by_category().get("denial_of_service", 0) == 8

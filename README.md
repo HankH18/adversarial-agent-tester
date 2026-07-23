@@ -62,6 +62,7 @@ cp .env.example .env      # then edit — see "Authentication & keys" below
 #    NOTE: the SQLite store is git-ignored and starts EMPTY, so status/regress/trace
 #    show nothing until `campaign` has populated it — run campaign first.
 .venv/bin/python -m adversaryforge.cli campaign   # attack the live target
+.venv/bin/python -m adversaryforge.cli seed-demo  # populate illustrative findings (fresh-clone demo)
 .venv/bin/python -m adversaryforge.cli resume     # resume a crashed/interrupted campaign
 .venv/bin/python -m adversaryforge.cli status     # observability snapshot the Orchestrator reads
 .venv/bin/python -m adversaryforge.cli report     # (re)generate reports/*.md

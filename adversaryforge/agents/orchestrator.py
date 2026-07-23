@@ -73,8 +73,10 @@ class Orchestrator:
         Signal: base threat priority + a coverage-gap bonus (few attempts) + an
         open-findings bonus (a category with open exploits deserves mutation
         pressure) − a saturation penalty (well-covered, all-defended)."""
-        coverage = self._store.coverage_by_category()
-        passfail = self._store.passfail_rates()
+        # campaign_only: exclude regression-replay runs so `regress` can't shift the
+        # deterministic target selection (keeps selection reproducible/auditable).
+        coverage = self._store.coverage_by_category(campaign_only=True)
+        passfail = self._store.passfail_rates(campaign_only=True)
         open_by_cat: dict[str, int] = {}
         for ex in self._store.list_exploits(status="open"):
             open_by_cat[ex["category"]] = open_by_cat.get(ex["category"], 0) + 1

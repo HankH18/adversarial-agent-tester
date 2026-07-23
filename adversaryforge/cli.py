@@ -77,6 +77,20 @@ def resume(run_id: str = typer.Argument("", help="Run id to resume (default: the
                   f"new confirmed exploits: {result.exploits_new}")
 
 
+@app.command(name="seed-demo")
+def seed_demo_cmd():
+    """Populate the store with a few illustrative findings so status/regress/report/trace
+    show data on a FRESH CLONE, without a live campaign. Idempotent; mode='demo' (never
+    skews real target selection)."""
+    from adversaryforge.platform import seed_demo
+
+    res = seed_demo(settings=get_settings())
+    console.print(f"[bold green]Seeded {res['findings']} demo finding(s)[/bold green] "
+                  f"[dim](run {res['run_id']})[/dim].")
+    console.print("  Now try: [bold]status[/bold] · [bold]regress[/bold] · "
+                  "[bold]report[/bold] · [bold]trace[/bold]")
+
+
 @app.command()
 def status():
     """Print the observability snapshot the Orchestrator reads."""
