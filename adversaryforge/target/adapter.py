@@ -7,8 +7,58 @@ attack tries to falsify — it is what the Judge checks a response against.
 """
 from __future__ import annotations
 
+import posixpath
+import re
 from dataclasses import dataclass, field
 from enum import Enum
+from urllib.parse import unquote, urlsplit
+
+# Leading-scheme detector (http://, https://, x://). Only a real scheme means the
+# string is an absolute URL whose path we should extract; everything else is treated
+# as a bare request path.
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
+_MULTISLASH_RE = re.compile(r"/{2,}")
+
+
+def normalized_path(raw: str) -> str:
+    """Canonical request PATH for prefix-matching — the path the target will actually
+    ROUTE, not the raw string. A default-deny guard that judges the raw string is
+    trivially evaded, because an HTTP client (httpx) and a server normalize before
+    matching. We reproduce that normalization so `//v1/writes`, `/v1/./writes`,
+    `/v1/foo/../writes`, and `/v1/writ%65s` all canonicalize to `/v1/writes`:
+
+      1. Only trust `urlsplit` to peel off scheme+host when a genuine scheme is present
+         (absolute-URL step like ``https://host/v1/writes``); otherwise treat the whole
+         string as a path by prepending a throwaway authority, so ``//v1/writes`` (which
+         `urlsplit` would misread as authority ``v1``) parses as the path it really is.
+      2. Percent-decode (`writ%65s` -> `writes`, `%2e` -> `.`) — a server routes the
+         DECODED path, so the guard must decode before matching or an encoded write slips
+         through.
+      3. Collapse redundant slashes, then resolve `.`/`..` dot-segments exactly as an
+         RFC-3986 client does before the path hits the wire (httpx performs this itself,
+         so `/v1/./writes` reaches the target as `/v1/writes`).
+
+    Query and fragment are always dropped (they are never part of a path match).
+    """
+    raw = raw or ""
+    if not _SCHEME_RE.match(raw):
+        raw = "x://x/" + raw.lstrip("/")
+    try:
+        path = urlsplit(raw).path
+    except ValueError:
+        # Malformed authority (e.g. a bad IPv6 bracket, `http://[::1/v1/writes`) makes
+        # urlsplit raise. Never propagate — a write guard must fail CLOSED, not crash seed
+        # loading. Extract the path by hand: drop the scheme, then everything up to the
+        # first '/', '?' or '#' is the authority; the remainder is the path we must judge.
+        rest = raw.split("://", 1)[1]
+        cut = min((i for i in (rest.find("/"), rest.find("?"), rest.find("#")) if i >= 0),
+                  default=len(rest))
+        path = rest[cut:].split("?", 1)[0].split("#", 1)[0]
+        if not path.startswith("/"):
+            path = "/" + path
+    path = unquote(path)
+    path = _MULTISLASH_RE.sub("/", path)
+    return posixpath.normpath(path)
 
 
 class AuthMode(str, Enum):

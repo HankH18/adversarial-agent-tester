@@ -13,13 +13,13 @@ step is one request whose response becomes a target turn in the transcript.
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlsplit
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adversaryforge.contracts import AttackCategory, OwaspLlm, OwaspWeb
+from adversaryforge.target.adapter import normalized_path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SEEDS_DIR = _REPO_ROOT / "evals" / "seeds"
@@ -95,7 +95,7 @@ class Seed(BaseModel):
             # Inspect method+path for EVERY other step, not just kind=='http': an
             # upload_file step defaults to kind=='chat' yet compiles to an arbitrary
             # method+path, so a write-shaped upload must still be flagged/excluded.
-            p = urlsplit(st.path or "").path  # strips scheme/host + query (blocks absolute-URL evasion)
+            p = normalized_path(st.path)  # strips scheme/host+query AND collapses //-evasion
             if (st.method or "").upper() in {"POST", "PUT", "PATCH", "DELETE"} and (
                 p == "/v1/writes" or p.startswith("/v1/writes/")
             ):

@@ -148,3 +148,58 @@ def test_invariant_registry_covers_every_seed():
     referenced = {s.target_invariant for s in SeedLibrary.load().seeds}
     missing = referenced - set(invariants)
     assert not missing, f"seeds reference invariants absent from the registry: {sorted(missing)}"
+
+
+# ── (5) test-count honesty: no doc may hard-code a (stale-prone) suite size ─
+# Unlike the seed/schema counts above, the *test count* is deliberately NOT pinned
+# in prose: the README and BUILD_LEDGER say to derive it by running pytest, precisely
+# because it moves every time a test is added (the stale "156 tests" class). So the
+# right guard here is the inverse of the ones above — forbid any doc from quoting a
+# literal count at all, rather than checking a quoted count against a live truth.
+#
+# Plural "tests" (not "test") is load-bearing: it flags "156 tests" / "76 tests pass"
+# while leaving "3 test roles", "the test suite", and "test_docs_consistency" alone.
+_TEST_COUNT_RX = re.compile(r"(?<![\w-])(\d+)\s+(?:passing\s+)?tests\b(?!\s*/)", re.IGNORECASE)
+_TEST_SUITE_OF_RX = re.compile(r"\btest\s+suite\s+of\s+(\d+)\b", re.IGNORECASE)
+# The sanctioned way to state the count is to defer to a live run, so a line that
+# invokes pytest ("run `.venv/bin/python -m pytest`", "run pytest") is exempt.
+_PYTEST_INVOCATION_RX = re.compile(r"run\s+`?[.\w/ -]*pytest", re.IGNORECASE)
+
+
+def _all_docs() -> list[Path]:
+    """`docs/**/*.md` plus the repo-root `*.md`, minus any `archive/`-quarantined
+    path (the count guard scans root docs too, unlike `_doc_numbers`)."""
+    docs: list[Path] = []
+    seen: set[Path] = set()
+    for path in sorted(_REPO_ROOT.glob("*.md")):
+        if path.is_file():
+            docs.append(path)
+            seen.add(path)
+    for path in sorted(_DOCS_DIR.rglob("*.md")):
+        if "archive" in path.relative_to(_REPO_ROOT).parts:
+            continue
+        if path.is_file() and path not in seen:
+            docs.append(path)
+    return docs
+
+
+def test_no_doc_hardcodes_a_stale_test_count():
+    """No doc may quote a literal test count (the stale "156 tests" class).
+
+    The suite size is derived by running pytest — the README and BUILD_LEDGER say
+    exactly that — so any "<N> tests" / "<N> passing tests" / "<N> tests pass(ing)"
+    / "test suite of <N>" is drift waiting to happen. Lines that defer to a live
+    `run pytest` are the sanctioned exception and are skipped."""
+    offenders: list[str] = []
+    for doc in _all_docs():
+        rel = doc.relative_to(_REPO_ROOT)
+        for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+            if _PYTEST_INVOCATION_RX.search(line):
+                continue  # blessed phrasing: "run pytest for the live count"
+            for rx in (_TEST_COUNT_RX, _TEST_SUITE_OF_RX):
+                for m in rx.finditer(line):
+                    offenders.append(f"{rel}:{lineno}: {m.group(0).strip()!r}  in  {line.strip()}")
+    assert not offenders, (
+        "doc(s) hard-code a test count; replace each with "
+        '"run pytest for the live count":\n' + "\n".join(offenders)
+    )

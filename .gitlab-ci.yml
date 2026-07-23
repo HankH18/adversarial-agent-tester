@@ -1,7 +1,7 @@
 # CI for AdversaryForge — lint + the full test suite (which INCLUDES the /contracts
-# producer/consumer contract tests and the regression-scan SLO timing test) on every
-# push and merge request. This is the "verify in CI" the spec calls for (Week-3 §
-# engineering requirements): the eval/contract/regression suites and the SLO run here.
+# producer/consumer contract tests and the regression-scan SLO timing test) plus a
+# fully-offline CLI smoke, on every push and merge request. This is the "verify in CI"
+# the spec calls for (Week-3 § engineering requirements).
 stages:
   - test
 
@@ -9,14 +9,20 @@ test:
   stage: test
   image: python:3.12-slim
   variables:
-    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+    UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   cache:
     key: "$CI_JOB_NAME"
     paths:
-      - .pip-cache/
+      - .uv-cache/
   before_script:
-    - python -m pip install --upgrade pip
-    - pip install -e ".[dev]"
+    # Install from the pinned uv.lock (--locked fails on lockfile drift), so GitLab CI
+    # runs the EXACT dependency set rather than a bare, unpinned `pip install -e`.
+    - pip install uv
+    - uv sync --extra dev --locked
   script:
-    - python -m ruff check adversaryforge tests
-    - python -m pytest -q
+    - uv run ruff check adversaryforge tests
+    - uv run pytest -q
+    # Offline CLI smoke — no target, no secrets; proves the CLI wiring end-to-end.
+    - uv run python -m adversaryforge.cli seed-demo
+    - uv run python -m adversaryforge.cli status
+    - uv run python -m adversaryforge.cli report

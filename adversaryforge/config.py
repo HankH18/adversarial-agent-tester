@@ -50,6 +50,11 @@ class Settings(BaseSettings):
         validation_alias="ADVERSARYFORGE_TARGET_BASE_URL",
     )
     session_cookie: str = Field(default="", validation_alias="AGENTFORGE_SESSION_COOKIE")
+    # Extra hostnames the client may dispatch to, comma/space-separated. The configured
+    # target host and loopback are ALWAYS allowed; this only WIDENS the allowlist (e.g.
+    # to point the platform at your own second chatbot). It exists so 'only test what
+    # you're authorized to' is a mechanical refusal, not just a doc promise.
+    target_allowlist: str = Field(default="", validation_alias="ADVERSARYFORGE_TARGET_ALLOWLIST")
 
     # --- Self-throttle (target has NO inbound rate limiting; we must not DoS it) ---
     max_concurrency: int = Field(default=2, validation_alias="ADVERSARYFORGE_MAX_CONCURRENCY")

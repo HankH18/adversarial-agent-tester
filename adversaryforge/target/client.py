@@ -22,8 +22,26 @@ from urllib.parse import urlsplit
 import httpx
 
 from adversaryforge.config import Settings
-from adversaryforge.target.adapter import TargetAdapter
+from adversaryforge.target.adapter import TargetAdapter, normalized_path
 from adversaryforge.target.session import SessionProvider
+
+
+def _resolve_allowed_hosts(settings: Settings, adapter: TargetAdapter) -> set[str]:
+    """The set of hostnames this client is permitted to dispatch to. Defaults to the
+    configured target host plus loopback (the local-target workflow), and is widened
+    only by explicit operator opt-in via ADVERSARYFORGE_TARGET_ALLOWLIST. This is the
+    ethics boundary made mechanical: 'only test systems you're authorized to' becomes
+    a client-enforced refusal, not a promise."""
+    hosts = {"localhost", "127.0.0.1"}
+    base_host = (urlsplit(adapter.base_url).hostname or "").lower()
+    if base_host:
+        hosts.add(base_host)
+    extra = getattr(settings, "target_allowlist", "") or ""
+    for h in extra.replace(",", " ").split():
+        h = h.strip().lower()
+        if h:
+            hosts.add(h)
+    return hosts
 
 
 @dataclass
@@ -75,6 +93,14 @@ class TargetClient:
         self._adapter = adapter
         self._session = session
         self._settings = settings
+        # Blast-radius allowlist, resolved once at construction. Fail FAST on a
+        # host-less base_url — a misconfigured target must not silently dispatch nowhere
+        # (or, worse, let a relative join land somewhere unintended).
+        if not (urlsplit(adapter.base_url).hostname or ""):
+            raise ValueError(
+                f"target_base_url has no host, refusing to build a client: {adapter.base_url!r}"
+            )
+        self._allowed_hosts = _resolve_allowed_hosts(settings, adapter)
         self._sem = asyncio.Semaphore(max(1, settings.max_concurrency))
         self._min_gap = max(0.0, settings.min_request_gap_s)
         self._last_request_at = 0.0
@@ -100,11 +126,23 @@ class TargetClient:
             return False
         if method.upper() not in self._WRITE_METHODS:
             return False
-        # Normalize to the path component: urlsplit strips scheme+host (so an
-        # ABSOLUTE-URL step like https://host/v1/writes can't slip past the prefix
-        # match) and the query/fragment.
-        p = urlsplit(path or "").path
+        # Canonicalize to the path component. normalized_path also collapses a leading
+        # '//' — which urlsplit would otherwise mis-parse as authority, letting
+        # //v1/writes (or https://host//v1/writes) slip past this prefix match.
+        p = normalized_path(path)
         return p == "/v1/writes" or p.startswith("/v1/writes/")
+
+    def _host_allowed(self, url: str) -> bool:
+        """True iff the resolved request host is on the allowlist. Compared by hostname
+        (port-insensitive, so localhost:8080 works) — an absolute-URL step to any other
+        host is refused BEFORE dispatch, so the platform can never touch a system the
+        operator has not authorized. A URL whose authority won't even parse fails CLOSED
+        (returns False → blocked), never an uncaught exception out of `request()`."""
+        try:
+            host = (urlsplit(url).hostname or "").lower()
+        except ValueError:
+            return False
+        return host in self._allowed_hosts
 
     def _same_host(self, url: str) -> bool:
         """True if `url` targets the configured target host. Relative paths (dispatched
@@ -134,6 +172,20 @@ class TargetClient:
     ) -> TargetResponse:
         corr = uuid.uuid4().hex
         url = self._adapter.base_url + path if path.startswith("/") else path
+
+        # Blast-radius guard #0 (outermost): refuse any request whose resolved host is
+        # not on the allowlist. An absolute-URL / mutated step naming a foreign host is
+        # NEVER dispatched — the platform only ever touches authorized targets, and a
+        # physician session categorically cannot leak off-host because the request never
+        # leaves the process.
+        if not self._host_allowed(url):
+            return TargetResponse(
+                method=method, url=url, request_headers={"X-Correlation-Id": corr},
+                request_body=json if json is not None else params, status_code=0,
+                response_headers={}, body_text="client-side host-allowlist guard: request "
+                f"NOT sent — off-target or unparseable host in {url!r} (allowed: "
+                f"{sorted(self._allowed_hosts)}; widen via ADVERSARYFORGE_TARGET_ALLOWLIST)",
+                latency_ms=0.0, correlation_id=corr, error="blocked_by_host_allowlist")
 
         # Blast-radius guard: default-deny any write to /v1/writes*. The platform is
         # read-only against the target unless the operator explicitly opts in

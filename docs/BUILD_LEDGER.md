@@ -38,7 +38,7 @@
 | G7 | README: setup, arch overview, deployed link, run instructions | Submission | ✅ |
 | G8 | ≥3 distinct professional vulnerability reports | Submission | ✅ 3 generated (reproducible, invariant-specific) |
 | G9 | AI Cost Analysis (100/1K/10K/100K runs) | Submission | ✅ COST_ANALYSIS.md (grounded in pricing.py; non-linear scale model) |
-| G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ✅ 7 schemas, 29 tests, byte-deterministic |
+| G10 | `/contracts` — versioned JSON Schemas, contract tests both sides | Eng req | ✅ 7 schemas, contract tests both sides, byte-deterministic |
 | G11 | OWASP Top-10 + LLM-Top-10 mapping on each eval case | Eng req | ✅ every seed mapped |
 | G12 | Regression harness: versioned store, replay, reappearance detect | Platform req | ✅ fixed + fail-closed; `regress` runs live |
 | G13 | Observability: coverage/passfail/trend/cost/open-findings queries | Platform req | ✅ store + `status` |
@@ -88,7 +88,7 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
   response preview) that populate when an API key is present.
 - Non-invasive (tracer in a ContextVar → deep code calls `trace()` with no signature changes),
   zero-cost when off (`ADVERSARYFORGE_TRACE`, default on), async-safe, never breaks a run.
-- Bound in campaign + regression; `adversaryforge trace [run_id]` renders the span tree. +4 tests (86 total).
+- Bound in campaign + regression; `adversaryforge trace [run_id]` renders the span tree. +4 test cases.
 - Verified live: a campaign emits ~32 spans across 3 agents with real per-rule Judge timing.
 
 ### Cycle 3 — cost analysis, perf baseline, as-built reconciliation (3 builders) ✅ DONE
@@ -102,7 +102,7 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
     actually wiring it**: `should_halt_no_signal()` (pure, tested) called per-seed in `run_campaign`;
     halts + logs `cost_halt` + returns `halted_no_signal` when budget is spent with zero signal. This
     satisfies the case-study "halt when cost accrues without producing signal" requirement. Updated
-    COST_ANALYSIS §5 + AS_BUILT (Cost Governor now ✅) to match. +4 tests (82 total).
+    COST_ANALYSIS §5 + AS_BUILT (Cost Governor now ✅) to match. +4 test cases.
   - AS_BUILT "verify" block used the console script, which was broken in the over-installed venv →
     switched the doc to the cwd-robust `python -m adversaryforge.cli` form.
 - **Editable-install root cause (final):** hatchling's `.pth` lacks a trailing newline AND repeated/
@@ -140,7 +140,7 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
   - editable install got clobbered by a builder → `adversaryforge` console script broke. **Fixed** by
     reinstall. Also cleaned test-fixture pollution from the real SQLite DB (regenerated clean baseline).
 - **Verified live:** clean campaign (3 findings), `regress` (3 open findings, gate NOT GREEN, correct),
-  `report` (3 professional reports). **76/76 tests pass.**
+  `report` (3 professional reports). **full suite green.**
 - Minor polish deferred (doc markdown lists, canary false-positive hardening, threat-model nits) → Cycle 2.
 
 ### Cycle 0 — foundation (lead) ✅ DONE

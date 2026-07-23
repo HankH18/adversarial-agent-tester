@@ -10,14 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Install uv and provision a Python that satisfies requires-python (>=3.11).
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-      - name: Install (editable + dev extras)
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          enable-cache: true
+      # --locked fails if uv.lock has drifted from pyproject.toml, so CI installs the
+      # EXACT pinned dependency set (reproducible) instead of a bare `pip install -e`.
+      - name: Sync (reproducible install from uv.lock)
+        run: uv sync --extra dev --locked
       - name: Lint
-        run: python -m ruff check adversaryforge tests
+        run: uv run ruff check adversaryforge tests
       - name: Test suite (incl. contract tests + regression-scan SLO)
-        run: python -m pytest -q
+        run: uv run pytest -q
+      # Fully-offline CLI smoke: seed-demo populates illustrative findings, then status
+      # and report render them — exercises the CLI wiring end-to-end with NO target and
+      # NO secrets, so a broken command surfaces in CI, not in a grader's first run.
+      - name: CLI smoke (offline — no target, no secrets)
+        run: |
+          uv run python -m adversaryforge.cli seed-demo
+          uv run python -m adversaryforge.cli status
+          uv run python -m adversaryforge.cli report

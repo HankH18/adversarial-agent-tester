@@ -49,23 +49,33 @@ Run the CLI as **`python -m adversaryforge.cli <cmd>` from the repo root** — t
 hidden, which Python's `site` skips; if the console script reports `No module named 'adversaryforge'`,
 run `chflags nohidden .venv/lib/python*/site-packages/*.pth` once, or just use the `-m` form.)
 
+**Fastest path — offline, zero secrets** (installs, then proves the CLI end-to-end):
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Or step by step:
+
 ```bash
 # 1. Set up the environment (uv — or the plain-pip fallback just below)
-uv venv --python 3.12
+uv venv                    # uv provisions a Python that satisfies requires-python (>=3.11)
 uv pip install -e '.[dev]'
-#    No uv?  python3.12 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+#    No uv?  python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 # 2. Configure (both secrets are OPTIONAL — the platform runs without them)
 cp .env.example .env      # then edit — see "Authentication & keys" below
 
-# 3-6. Run the platform (from the repo root)
-#    NOTE: the SQLite store is git-ignored and starts EMPTY, so status/regress/trace
-#    show nothing until `campaign` has populated it — run campaign first.
-.venv/bin/python -m adversaryforge.cli campaign   # attack the live target
-.venv/bin/python -m adversaryforge.cli seed-demo  # populate illustrative findings (fresh-clone demo)
-.venv/bin/python -m adversaryforge.cli resume     # resume a crashed/interrupted campaign
+# 3. START HERE (fully offline, no target, no secrets): populate illustrative findings,
+#    then render them. The SQLite store is git-ignored and starts EMPTY, so status/report
+#    show nothing until something has populated it — seed-demo is the zero-network way in.
+.venv/bin/python -m adversaryforge.cli seed-demo  # populate illustrative findings (offline)
 .venv/bin/python -m adversaryforge.cli status     # observability snapshot the Orchestrator reads
 .venv/bin/python -m adversaryforge.cli report     # (re)generate reports/*.md
+
+# 4. LIVE (needs the authorized target; the authenticated plane also needs a session cookie)
+.venv/bin/python -m adversaryforge.cli campaign   # attack the live target
+.venv/bin/python -m adversaryforge.cli resume     # resume a crashed/interrupted campaign
 .venv/bin/python -m adversaryforge.cli regress    # re-run the fail-closed regression suite
 ```
 

@@ -25,7 +25,7 @@ Put bluntly: **the platform is general; the payload is not.** Stage 2 is not a r
 These transfer to an arbitrary target essentially unchanged. They are the reason Stage 2 is feasible.
 
 ### 1.1 The target-adapter *abstraction* (not its instance)
-`TargetAdapter` (`adversaryforge/target/adapter.py:28-44`) is a clean, frozen dataclass: `name`, `base_url`, `auth_mode`, an `endpoints` dict, an `invariants` dict, and a `url(key, **path_params)` templating helper. Nothing about the *type* is healthcare-specific. Only the **factory** `agentforge_adapter()` (`adapter.py:52-122`) hard-codes the 24 endpoints and 11 invariants. Stage 2 keeps the dataclass and replaces the factory with a runtime builder.
+`TargetAdapter` (`adversaryforge/target/adapter.py:58-74`) is a clean, frozen dataclass: `name`, `base_url`, `auth_mode`, an `endpoints` dict, an `invariants` dict, and a `url(key, **path_params)` templating helper. Nothing about the *type* is healthcare-specific. Only the **factory** `agentforge_adapter()` (`adapter.py:82-152`) hard-codes the 24 endpoints and 11 invariants. Stage 2 keeps the dataclass and replaces the factory with a runtime builder.
 
 ### 1.2 The session abstraction
 `SessionProvider` (`adversaryforge/target/session.py:26-36`) is an ABC the attack engine talks to through exactly two methods — `headers()` and `is_authenticated`. The docstring says it explicitly: *"adding a backend never touches attack code."* `AnonymousSession`, `EnvCookieSession`, and the `OAuthSession` stub all satisfy it. A new auth mode for a generic app is a new provider, not a change to the engine.
