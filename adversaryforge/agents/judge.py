@@ -441,8 +441,11 @@ class Judge:
 
     def _verdict(self, view, outcome, confidence, severity=None, rationale="",
                  method="deterministic", evidence=None, regression=False) -> Verdict:
-        # Allow (outcome, confidence, rationale) or (outcome, confidence, severity, rationale)
-        if isinstance(severity, str) and rationale == "":
+        # Allow (outcome, confidence, rationale) or (outcome, confidence, severity, rationale).
+        # `Severity` subclasses str, so a bare isinstance(severity, str) would also match a
+        # real Severity — exclude it, or a caller passing a Severity 4th-positional with no
+        # rationale would have the enum silently shoved into `rationale` and severity reset.
+        if isinstance(severity, str) and not isinstance(severity, Severity) and rationale == "":
             rationale, severity = severity, None
         sev = severity or self._default_severity(outcome, view.category)
         inv_violated = view.target_invariant if outcome == Outcome.success else None

@@ -135,3 +135,22 @@ def test_burst_step_rejects_expensive_endpoints_at_load():
     Step.model_validate({"kind": "burst", "path": "/ready", "burst_count": 10})   # ok
     with pytest.raises(Exception):  # a real endpoint would make the burst a genuine DoS
         Step.model_validate({"kind": "burst", "path": "/v1/chat", "burst_count": 10})
+
+
+async def test_self_throttle_paces_requests_to_bound_target_load():
+    # The self-throttle (minimum inter-request gap) is the platform's PRIMARY control
+    # against DoSing the clinical target — yet it was the one blast-radius control with
+    # no test. Fire N concurrent requests and assert they were PACED: total wall time
+    # >= (N-1) * min_gap, i.e. the throttle really serialized the inter-request spacing.
+    import asyncio
+    import time
+
+    gap, n = 0.03, 5
+    settings = Settings(target_base_url=BASE, min_request_gap_s=gap, max_concurrency=4)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), settings) as c:
+            t0 = time.perf_counter()
+            await asyncio.gather(*[c.request("GET", "/health") for _ in range(n)])
+            elapsed = time.perf_counter() - t0
+    assert elapsed >= (n - 1) * gap * 0.9  # throttle enforced the inter-request spacing

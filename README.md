@@ -50,14 +50,17 @@ hidden, which Python's `site` skips; if the console script reports `No module na
 run `chflags nohidden .venv/lib/python*/site-packages/*.pth` once, or just use the `-m` form.)
 
 ```bash
-# 1. Set up the environment
+# 1. Set up the environment (uv — or the plain-pip fallback just below)
 uv venv --python 3.12
 uv pip install -e '.[dev]'
+#    No uv?  python3.12 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 # 2. Configure (both secrets are OPTIONAL — the platform runs without them)
 cp .env.example .env      # then edit — see "Authentication & keys" below
 
 # 3-6. Run the platform (from the repo root)
+#    NOTE: the SQLite store is git-ignored and starts EMPTY, so status/regress/trace
+#    show nothing until `campaign` has populated it — run campaign first.
 .venv/bin/python -m adversaryforge.cli campaign   # attack the live target
 .venv/bin/python -m adversaryforge.cli resume     # resume a crashed/interrupted campaign
 .venv/bin/python -m adversaryforge.cli status     # observability snapshot the Orchestrator reads
