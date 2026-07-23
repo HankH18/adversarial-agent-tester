@@ -24,14 +24,12 @@ from adversaryforge.contracts import (
     ConfirmedExploit,
     Outcome,
     RegressionCandidate,
-    Severity,
     Verdict,
 )
 from adversaryforge.observability.store import Store
 from adversaryforge.observability.tracing import trace
 from adversaryforge.redteam.executor import SeedExecutor
 from adversaryforge.redteam.seeds import Seed, SeedLibrary
-from adversaryforge.target.adapter import TargetAdapter
 
 
 # Base priority when there is no signal yet — reflects threat-model ranking.

@@ -87,8 +87,8 @@ def seeds():
     """List the seed library grouped by category, with test-design roles."""
     lib = SeedLibrary.load()
     table = Table(title=f"Seed library — {len(lib.seeds)} cases, {len(lib.categories())} categories")
-    table.add_column("id"); table.add_column("category"); table.add_column("role")
-    table.add_column("auth"); table.add_column("title")
+    for _col in ("id", "category", "role", "auth", "title"):
+        table.add_column(_col)
     for s in lib.seeds:
         cat = s.category if isinstance(s.category, str) else s.category.value
         table.add_row(s.id, cat, s.test_role, "🔒" if s.requires_auth else "🌐", s.title)

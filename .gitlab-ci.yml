@@ -1,0 +1,22 @@
+# CI for AdversaryForge — lint + the full test suite (which INCLUDES the /contracts
+# producer/consumer contract tests and the regression-scan SLO timing test) on every
+# push and merge request. This is the "verify in CI" the spec calls for (Week-3 §
+# engineering requirements): the eval/contract/regression suites and the SLO run here.
+stages:
+  - test
+
+test:
+  stage: test
+  image: python:3.12-slim
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+  cache:
+    key: "$CI_JOB_NAME"
+    paths:
+      - .pip-cache/
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install -e ".[dev]"
+  script:
+    - python -m ruff check adversaryforge tests
+    - python -m pytest -q

@@ -17,7 +17,7 @@ def test_nested_spans_form_a_tree(tmp_path):
     with use_tracer(Tracer(store, rid)):
         with trace("orchestrator.run_seed", "orchestrator", seed="s1") as p:
             p.set("outcome", "partial")
-            with trace("judge.evaluate", "judge", invariant="INV-X") as c:
+            with trace("judge.evaluate", "judge", invariant="INV-X"):
                 with trace("judge.rule", "judge", invariant="INV-X") as r:
                     r.set("fired", True)
 

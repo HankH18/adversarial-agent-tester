@@ -94,7 +94,7 @@ class Judge:
                 return det
             # No deterministic decision → try the LLM second opinion if available.
             if self._llm is not None:
-                with trace("judge.llm_adjudicate", "judge", invariant=view.target_invariant) as lsp:
+                with trace("judge.llm_adjudicate", "judge", invariant=view.target_invariant):
                     res = self._llm(view)
                 if res is not None:
                     outcome, confidence, rationale = res

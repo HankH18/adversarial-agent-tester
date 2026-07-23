@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Iterable
 
 from adversaryforge.contracts import (
-    AttackCategory,
     ConfirmedExploit,
     Severity,
     TranscriptTurn,
@@ -275,7 +274,7 @@ def build_reproduction(transcript: Iterable[TranscriptTurn]) -> list[str]:
         content = (turn.content or "").rstrip()
         if turn.role == "attacker":
             http = _render_request_detail(turn)
-            head = f"Send the following request to the Co-Pilot"
+            head = "Send the following request to the Co-Pilot"
             if http:
                 head += f" ({http})"
             steps.append(f"{head}:\n\n```\n{content}\n```")
