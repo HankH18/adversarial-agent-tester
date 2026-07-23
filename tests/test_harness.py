@@ -134,7 +134,10 @@ async def test_run_regression_returns_cli_contract_shape(tmp_path, monkeypatch):
     # command reads result['details'] with rows {case_id, category, passed: bool,
     # note: str}, plus top-level passed/total/failed/skipped/errored/reappeared.
     st = _settings(tmp_path, monkeypatch)
-    result = await run_regression(settings=st)  # no cases stored -> empty but well-shaped
+    with respx.mock(assert_all_called=False) as router:  # keep it hermetic (docstring: fully offline)
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        result = await run_regression(settings=st)  # no cases stored -> empty but well-shaped
+    assert result["target_version"] == "t"  # served by respx, not a swallowed live-connection 'unknown'
     for key in ("target_version", "passed", "total", "failed", "skipped",
                 "errored", "reappeared", "all_passed", "details"):
         assert key in result, f"missing top-level key {key!r}"
@@ -359,6 +362,7 @@ async def test_run_regression_skips_auth_required_case_without_session(tmp_path,
     assert result["skipped"] == 1
     assert result["passed"] == 0
     assert result["failed"] == 0
+    assert result["all_passed"] is True  # skipped-only run stays GREEN by design (gate ignores skips)
     assert result["cases"][0]["result"] == "skipped"
     assert result["cases"][0]["reason"] == "requires_auth"
     # Auth gate is decided WITHOUT touching the target.

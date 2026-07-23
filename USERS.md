@@ -113,7 +113,8 @@ and only when — a real vulnerability reappears.
 
 **Specific use cases.**
 - *Merge gate that means something.* A red test in CI blocks the merge because the exploit assertion
-  fired again and held across N replays — distinguishing a real regression from behavioral drift
+  fired again under the same deterministic assertion that confirmed it — distinguishing a real regression
+  from behavioral drift (N-times stability replay to fingerprint flaky cases is planned — see `AS_BUILT.md`)
   (`§7`, and the invariant *a passing regression test must mean the vulnerability is fixed* — `§2`).
 - *Reproduce-from-report.* An on-call engineer fixes a finding at 2 a.m. from the report's minimal
   sequence alone, because repro steps are ground-truth transcript, not LLM prose (`§4.4`, `§13`).
@@ -127,7 +128,8 @@ static assertion like "the model refused" goes green the moment the model's phra
 that passes because the model's behavior changed, not because the vulnerability was fixed, is worse than
 no test at all* (case study, p.10). AdversaryForge earns the trust by construction: the pass criterion is
 the exact deterministic assertion that confirmed the exploit (the target exposes a machine-checkable
-`verification.action` field — `§3`), re-run N times for stability, cross-checked against the full suite.
+`verification.action` field — `§3`), re-judged deterministically and cross-checked against the full suite
+(N-times stability replay is planned).
 A manual pentester who validates a fix once and moves on cannot detect the variant that bypasses it three
 weeks later; the platform re-runs the whole corpus on every deploy, forever. The team gets a CI gate they
 can actually block merges on — the thing a spreadsheet of payloads can never become.
@@ -169,9 +171,11 @@ testing of systems their physicians depend on.*
 - *Trust the verdicts.* Rely on findings because the **Judge is independent by construction** — it is fed
   only a `JudgeView` (the transcript + the invariant under test), *never* the attacker's technique, intent,
   or self-assessment, and it is **deterministic-first** so most verdicts don't depend on any model at all
-  (`§4.3`). An attacker cannot talk the Judge into a false positive. (Two hardening legs are planned, not
-  yet shipped — a *different-family* attacker model and a per-run *Cohen's-κ* drift gate; both are
-  disclosed in `AS_BUILT.md`. Anti-drift today is the versioned ruleset + the ground-truth test set.)
+  (`§4.3`). An attacker cannot talk the Judge into a false positive. (The *different-family* attacker is
+  shipped and active when `OPENROUTER_API_KEY` is set — the Red Team/mutator runs Hermes 4 405B via
+  OpenRouter, a different model family from the Claude Judge — see `AS_BUILT.md` R2. One hardening leg
+  remains deferred: a per-run *Cohen's-κ* drift gate; anti-drift today is the versioned ruleset + the
+  ground-truth test set.)
 - *Reconstruct any overnight run.* Answer "what did the platform do at 3 a.m. and why" from the trace and
   the deterministic decision log — target selection is a *scoring function*, not an LLM's "it felt
   important" (`§6`).
@@ -248,7 +252,7 @@ one-time human engagement or a flat list of strings can never be.
 
 | Platform capability (`ARCHITECTURE.md`) | AppSec | Co-Pilot Eng | CISO | ATO Reviewer |
 |---|:--:|:--:|:--:|:--:|
-| Independent Judge (transcript-only `JudgeView`, deterministic-first; different-family + κ-gate planned) — `§4.3` | ● | ● | ● | ● |
+| Independent Judge (transcript-only `JudgeView`, deterministic-first; different-family active (key-gated), κ-gate planned) — `§4.3` | ● | ● | ● | ● |
 | Mutation of partial attacks (Mutator; tree search planned) — `§4.2` | ● | | | |
 | Regression that means something (assertion re-run; N-replay stability planned) — `§7` | | ● | ● | ● |
 | Deterministic-by-default (AI proposes, code disposes) — `§9` | | ● | ● | ● |
