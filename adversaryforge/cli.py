@@ -102,8 +102,14 @@ def regress():
 
     settings = get_settings()
     result = asyncio.run(run_regression(settings=settings))
-    gate = "[green]GREEN[/green]" if result.get("all_passed") else "[red]NOT GREEN[/red]"
+    if result.get("empty"):
+        gate = "[yellow]EMPTY (no regression cases)[/yellow]"
+    else:
+        gate = "[green]GREEN[/green]" if result.get("all_passed") else "[red]NOT GREEN[/red]"
     console.print(f"[bold]Regression[/bold] vs {result['target_version']} — gate {gate}")
+    if result.get("empty"):
+        console.print("  [yellow]exploit DB is empty — run a campaign first so there is "
+                      "something to replay (an empty gate is NOT green, by design)[/yellow]")
     console.print(f"  {result['passed']}/{result['total']} passed · "
                   f"[red]{result['failed']} failed[/red] · "
                   f"{result.get('skipped', 0)} skipped · "

@@ -64,6 +64,19 @@ def test_regression_meter_judge_llm_logs_delta_not_cumulative(tmp_path):
     store.close()
 
 
+async def test_empty_regression_db_is_not_green(tmp_path, monkeypatch):
+    # An empty/unmigrated exploit DB has nothing to prove fixed — the fail-closed gate
+    # must report EMPTY / not-green, never silently GREEN (which would let a
+    # misconfigured or unpopulated DB pass a CI merge gate).
+    st = _settings(tmp_path, monkeypatch)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        result = await run_regression(settings=st)
+    assert result["total"] == 0
+    assert result["empty"] is True
+    assert result["all_passed"] is False  # empty is NOT green
+
+
 def test_full_exploit_db_scan_meets_time_slo():
     # SLO (Week_3 doc:498-501; ARCHITECTURE §7): a full scan of the exploit DB must
     # complete within a defined time budget. Populate a realistic DB and MEASURE it.

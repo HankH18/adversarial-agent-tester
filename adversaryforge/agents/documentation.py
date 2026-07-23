@@ -507,6 +507,14 @@ def generate_all_reports(*, settings=None) -> int:
         settings = get_settings()
 
     store = Store(settings.db_path)
+    # Write reports next to the DB in use. The default (repo) data dir keeps the
+    # committed reports/ at the repo root; a temp/override ADVERSARYFORGE_DATA_DIR
+    # writes under that dir instead, so an out-of-tree run (perf harness, an audit
+    # against a scratch DB) can never overwrite or prune the committed reports.
+    data_dir = getattr(settings, "data_dir", None)
+    reports_dir = (_REPORTS_DIR
+                   if data_dir is None or Path(data_dir).resolve() == (_REPO_ROOT / "data").resolve()
+                   else Path(data_dir) / "reports")
     written = 0
     seen_ids: set[str] = set()
     try:
@@ -549,14 +557,14 @@ def generate_all_reports(*, settings=None) -> int:
         # Clean slate — but only remove stale VULN-*.md we will NOT rewrite, so a
         # partial/incomplete DB can never delete a report it cannot rebuild.
         keep = {f"{r.report_id}.md" for r in reports_to_write}
-        for stale in _REPORTS_DIR.glob("VULN-*.md"):
+        for stale in reports_dir.glob("VULN-*.md"):
             if stale.name not in keep:
                 stale.unlink()
 
         # Pass 2 — write.
         for report in reports_to_write:
             store.record_report(report)
-            path = write_report_markdown(report)
+            path = write_report_markdown(report, reports_dir)
             written += 1
             store.log_event(None, "documentation", "report_written",
                             f"{report.report_id} sev={_enum(report.severity)} -> {path.name}")

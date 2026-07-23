@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import resource
 import statistics
 import sys
 import tempfile
@@ -42,6 +41,11 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:  # `resource` is POSIX-only; keep the package import-safe on Windows.
+    import resource
+except ImportError:  # pragma: no cover - non-POSIX
+    resource = None
 
 from adversaryforge.agents.judge import Judge
 from adversaryforge.config import Settings
@@ -280,9 +284,12 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
 
     real_after = _db_stat(real_db_path)
 
-    ru_maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    # macOS reports ru_maxrss in bytes; Linux in kilobytes.
-    peak_rss_mb = (ru_maxrss / (1024 * 1024)) if sys.platform == "darwin" else (ru_maxrss / 1024)
+    if resource is not None:
+        ru_maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # macOS reports ru_maxrss in bytes; Linux in kilobytes.
+        peak_rss_mb = (ru_maxrss / (1024 * 1024)) if sys.platform == "darwin" else (ru_maxrss / 1024)
+    else:  # non-POSIX (Windows): getrusage unavailable
+        peak_rss_mb = 0.0
 
     return LoadTestResult(
         attacks_total=attacks,

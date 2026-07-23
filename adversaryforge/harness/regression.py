@@ -284,11 +284,13 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
         "skipped": skipped,
         "errored": errored,
         "reappeared": reappeared,
-        # CI gate is FAIL-CLOSED: green only when zero live failures AND zero
-        # inconclusive (errored) cases. A dead/unreachable target yields errors,
-        # which must NOT read as "everything is fixed". Skips (auth/missing seed)
-        # are explicitly out of scope and don't fail the gate.
-        "all_passed": failed == 0 and errored == 0,
+        # CI gate is FAIL-CLOSED: green only when there ARE cases AND zero live
+        # failures AND zero inconclusive (errored) cases. An empty/unmigrated DB has
+        # nothing to prove fixed, so it must NOT read as "everything is fixed"; a
+        # dead/unreachable target yields errors, likewise not green. Skips (auth /
+        # missing seed) are explicitly out of scope and don't fail the gate.
+        "empty": len(cases) == 0,
+        "all_passed": failed == 0 and errored == 0 and len(cases) > 0,
         "cross_category_regressions": cross_category,  # categories whose success rose
         "details": cli_details,  # CLI/consumer contract
         "cases": details,        # rich internal rows

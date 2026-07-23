@@ -130,3 +130,28 @@ def test_openrouter_client_uses_reported_cost_and_tokens():
     assert text == "variant text"
     assert (i, o) == (100, 40)
     assert usd == 0.0123  # OpenRouter's real usage.cost, not the static estimate
+
+
+def test_openrouter_client_falls_back_to_static_cost_when_cost_absent():
+    # When OpenRouter omits usage.cost, complete() must fall back to the static pricing
+    # table — not silently record $0, which would undercount Hermes spend and defeat the
+    # cost governor's no-signal halt.
+    import respx
+    from httpx import Response
+
+    from adversaryforge.llm import pricing
+    from adversaryforge.llm.openrouter import OpenRouterClient
+
+    model = "nousresearch/hermes-4-405b"
+    with respx.mock(assert_all_called=True) as router:
+        router.post("https://openrouter.ai/api/v1/chat/completions").mock(
+            return_value=Response(200, json={
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 500},  # NO 'cost' field
+            }))
+        text, i, o, usd = OpenRouterClient(_ORSettings()).complete(
+            "sys", "user", model=model, max_tokens=16)
+
+    assert (text, i, o) == ("ok", 1000, 500)
+    assert usd == pytest.approx(pricing.cost(model, 1000, 500))
+    assert usd > 0  # fell back to a real estimate, not $0

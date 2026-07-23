@@ -90,8 +90,11 @@ class Seed(BaseModel):
         """True if any step issues a write verb to the target's /v1/writes* routes.
         Such seeds are excluded from campaigns unless the operator opts in."""
         for st in self.steps:
-            if st.kind != "http":
-                continue
+            if st.kind == "burst":
+                continue  # burst is validated to /health,/ready only — never a write
+            # Inspect method+path for EVERY other step, not just kind=='http': an
+            # upload_file step defaults to kind=='chat' yet compiles to an arbitrary
+            # method+path, so a write-shaped upload must still be flagged/excluded.
             p = urlsplit(st.path or "").path  # strips scheme/host + query (blocks absolute-URL evasion)
             if (st.method or "").upper() in {"POST", "PUT", "PATCH", "DELETE"} and (
                 p == "/v1/writes" or p.startswith("/v1/writes/")

@@ -13,10 +13,9 @@ dependencies = [
     "pydantic-settings>=2.3",
     "jsonschema>=4.22",
     "anthropic>=0.40",
-    "tenacity>=8.4",
     "typer>=0.12",
     "rich>=13.7",
-    "python-dotenv>=1.0",
+    "python-dotenv>=1.0",  # required by config.py's SettingsConfigDict(env_file=...)
     "pyyaml>=6.0",
 ]
 

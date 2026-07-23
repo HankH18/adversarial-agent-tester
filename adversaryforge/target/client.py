@@ -106,6 +106,12 @@ class TargetClient:
         p = urlsplit(path or "").path
         return p == "/v1/writes" or p.startswith("/v1/writes/")
 
+    def _same_host(self, url: str) -> bool:
+        """True if `url` targets the configured target host. Relative paths (dispatched
+        as base_url + path) are always same-host; an absolute URL to any other host is
+        not — so session credentials are never sent off-target."""
+        return urlsplit(url).netloc == urlsplit(self._adapter.base_url).netloc
+
     async def _pace(self) -> None:
         """Enforce the minimum inter-request gap (in addition to the sem cap)."""
         async with self._gap_lock:
@@ -143,7 +149,11 @@ class TargetClient:
                 error="blocked_by_write_guard")
 
         req_headers: dict[str, str] = {"X-Correlation-Id": corr}
-        req_headers.update(self._session.headers())
+        # Attach session credentials (cookie / auth) ONLY when the request targets the
+        # configured host. An absolute-URL step to a foreign host must never carry the
+        # physician session off-target — same blast-radius discipline as the write guard.
+        if self._same_host(url):
+            req_headers.update(self._session.headers())
         if headers:
             req_headers.update(headers)
 

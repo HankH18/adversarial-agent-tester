@@ -52,8 +52,9 @@ durable state machine:
   not an afterthought.
 
 Agents never call each other directly. They exchange **versioned JSON-Schema messages** through a
-**LangGraph** state machine that persists every hop, checkpoints so a crashed run resumes rather than
-restarts, and *interrupts* at exactly the human approval gates. The whole platform is bounded by a
+**LangGraph** state machine (the *planned* transport — the shipped build wires the same typed messages
+through direct calls; see [`AS_BUILT.md §2.1`](docs/AS_BUILT.md)) that persists every hop, checkpoints so
+a crashed run resumes rather than restarts, and *interrupts* at exactly the human approval gates. The whole platform is bounded by a
 cost governor that meters spend per agent, halts a campaign that is burning tokens without producing
 signal, and backs off under provider rate limits.
 
@@ -557,8 +558,9 @@ deployment decision recorded in the Build-vs-Configure record.)
 
 ## 12. Data model, storage, and state management
 
-**Framework — LangGraph** (the user's selected framework). It gives us three things this platform
-specifically needs: **durable checkpointing** (an overnight campaign that crashes resumes from the last
+**Framework — LangGraph** (the user's selected framework; **planned migration — not yet wired in the
+shipped build**, which uses direct typed calls, see [`AS_BUILT.md §2.1`](docs/AS_BUILT.md)). It gives us
+three things this platform specifically needs: **durable checkpointing** (an overnight campaign that crashes resumes from the last
 committed node, not from zero), **interrupts** (the human approval gates in §8 map directly onto
 LangGraph's interrupt-and-resume, rather than being bolted on), and a **native execution trace** that
 feeds §11. The graph nodes are the agents; the edges are the typed contracts of §5.
