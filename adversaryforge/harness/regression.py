@@ -46,7 +46,7 @@ from adversaryforge.agents.judge import Judge
 from adversaryforge.config import Settings, get_settings
 from adversaryforge.contracts import Outcome
 from adversaryforge.observability.store import Store
-from adversaryforge.observability.tracing import Tracer, bind_tracer, unbind_tracer
+from adversaryforge.observability.tracing import Tracer, use_tracer
 from adversaryforge.platform import build_llm_adjudicator
 from adversaryforge.redteam.executor import SeedExecutor
 from adversaryforge.redteam.seeds import SeedLibrary
@@ -158,108 +158,110 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
                             "configured cookie rejected by the target; authed cases skipped")
 
         executor = SeedExecutor(client)
-        _trace_token = bind_tracer(Tracer(store, run_id) if settings.trace_enabled else None)
         _judge_seen = {"usd": 0.0, "in": 0, "out": 0}  # cumulative Judge-LLM spend metered
         passfail_before = store.passfail_rates()  # snapshot for cross-category regression
+        tracer = Tracer(store, run_id) if settings.trace_enabled else None
 
-        for case in cases:
-            seed_id = (case.request or {}).get("seed_id")
-            seed = seed_by_id.get(seed_id)
-            base = {
-                "case_id": case.case_id,
-                "exploit_id": case.exploit_id,
-                "seed_id": seed_id,
-                "category": _enum(case.category),
-                "severity": _enum(case.severity),
-                "invariant": (case.assertion or {}).get("invariant"),
-            }
+        # use_tracer guarantees the tracer contextvar is reset on ANY exit path
+        # (including an exception mid-loop) — same pattern as platform.run_campaign.
+        with use_tracer(tracer):
+            for case in cases:
+                seed_id = (case.request or {}).get("seed_id")
+                seed = seed_by_id.get(seed_id)
+                base = {
+                    "case_id": case.case_id,
+                    "exploit_id": case.exploit_id,
+                    "seed_id": seed_id,
+                    "category": _enum(case.category),
+                    "severity": _enum(case.severity),
+                    "invariant": (case.assertion or {}).get("invariant"),
+                }
 
-            if seed is None:
-                skipped += 1
-                store.log_event(run_id, "harness", "regression_skipped",
-                                f"{case.case_id}: seed '{seed_id}' not in library")
-                details.append({**base, "result": "skipped", "reason": "seed_not_found",
-                                "reappeared": False, "outcome": None, "rationale": None})
-                continue
+                if seed is None:
+                    skipped += 1
+                    store.log_event(run_id, "harness", "regression_skipped",
+                                    f"{case.case_id}: seed '{seed_id}' not in library")
+                    details.append({**base, "result": "skipped", "reason": "seed_not_found",
+                                    "reappeared": False, "outcome": None, "rationale": None})
+                    continue
 
-            prev_status = status_by_exploit.get(case.exploit_id)
-            decision = _decide_case(
-                seed_requires_auth=seed.requires_auth,
-                authenticated=authed,
-                outcome=Outcome.failure,  # placeholder; overwritten after real judge
-                prev_status=prev_status,
-            )
+                prev_status = status_by_exploit.get(case.exploit_id)
+                decision = _decide_case(
+                    seed_requires_auth=seed.requires_auth,
+                    authenticated=authed,
+                    outcome=Outcome.failure,  # placeholder; overwritten after real judge
+                    prev_status=prev_status,
+                )
 
-            # Auth gate is decided WITHOUT touching the target.
-            if decision["result"] == "skipped":
-                skipped += 1
-                store.log_event(run_id, "harness", "regression_skipped",
-                                f"{case.case_id}: requires auth, no session")
-                details.append({**base, "result": "skipped", "reason": "requires_auth",
-                                "reappeared": False, "outcome": None, "rationale": None})
-                continue
+                # Auth gate is decided WITHOUT touching the target.
+                if decision["result"] == "skipped":
+                    skipped += 1
+                    store.log_event(run_id, "harness", "regression_skipped",
+                                    f"{case.case_id}: requires auth, no session")
+                    details.append({**base, "result": "skipped", "reason": "requires_auth",
+                                    "reappeared": False, "outcome": None, "rationale": None})
+                    continue
 
-            # Replay the frozen sequence and re-adjudicate the invariant. For a
-            # mutation-discovered case, replay the exact mutated payload that broke
-            # through (not the base seed), or the case can never re-detect the vuln.
-            overrides = (case.request or {}).get("override_messages")
-            attempt = await executor.run(seed, directive_id="regression",
-                                         override_messages=overrides)
-            verdict = judge.evaluate_attempt(attempt)
-            # Record into the store so the after-snapshot (and cross-category
-            # detection) actually reflect this run. Attempt before verdict:
-            # record_verdict/passfail join on attempt_id.
-            store.record_attempt(run_id, attempt)
-            store.record_verdict(run_id, verdict)
-            _meter_judge_llm(judge, store, run_id, _judge_seen)  # LLM spend -> cost ledger
-            outcome = verdict.outcome
+                # Replay the frozen sequence and re-adjudicate the invariant. For a
+                # mutation-discovered case, replay the exact mutated payload that broke
+                # through (not the base seed), or the case can never re-detect the vuln.
+                overrides = (case.request or {}).get("override_messages")
+                attempt = await executor.run(seed, directive_id="regression",
+                                             override_messages=overrides)
+                verdict = judge.evaluate_attempt(attempt)
+                # Record into the store so the after-snapshot (and cross-category
+                # detection) actually reflect this run. Attempt before verdict:
+                # record_verdict/passfail join on attempt_id.
+                store.record_attempt(run_id, attempt)
+                store.record_verdict(run_id, verdict)
+                _meter_judge_llm(judge, store, run_id, _judge_seen)  # LLM spend -> cost ledger
+                outcome = verdict.outcome
 
-            decision = _decide_case(
-                seed_requires_auth=seed.requires_auth,
-                authenticated=authed,
-                outcome=outcome,
-                prev_status=prev_status,
-            )
+                decision = _decide_case(
+                    seed_requires_auth=seed.requires_auth,
+                    authenticated=authed,
+                    outcome=outcome,
+                    prev_status=prev_status,
+                )
 
-            row = {**base, "result": decision["result"], "reason": decision["reason"],
-                   "reappeared": decision["reappeared"], "outcome": _enum(outcome),
-                   "rationale": verdict.rationale}
+                row = {**base, "result": decision["result"], "reason": decision["reason"],
+                       "reappeared": decision["reappeared"], "outcome": _enum(outcome),
+                       "rationale": verdict.rationale}
 
-            result = decision["result"]
-            if result == "passed":
-                passed += 1
-                store.log_event(run_id, "harness", "regression_pass",
-                                f"{case.case_id}: invariant holds ({_enum(outcome)})")
-            elif result == "failed":
-                failed += 1
-                store.log_event(run_id, "harness", "regression_fail",
-                                f"{case.case_id}: invariant falsified again")
-                if decision["reappeared"]:
-                    reappeared += 1
-                    store.set_exploit_status(case.exploit_id, "open")
-                    store.log_event(run_id, "harness", "regression_reappeared",
-                                    f"{case.exploit_id}: was '{prev_status}', reopened")
-            else:  # errored — inconclusive, fail-closed for the gate
-                errored += 1
-                store.log_event(run_id, "harness", "regression_errored",
-                                f"{case.case_id}: inconclusive ({verdict.rationale[:60]})")
+                result = decision["result"]
+                if result == "passed":
+                    passed += 1
+                    store.log_event(run_id, "harness", "regression_pass",
+                                    f"{case.case_id}: invariant holds ({_enum(outcome)})")
+                elif result == "failed":
+                    failed += 1
+                    store.log_event(run_id, "harness", "regression_fail",
+                                    f"{case.case_id}: invariant falsified again")
+                    if decision["reappeared"]:
+                        reappeared += 1
+                        store.set_exploit_status(case.exploit_id, "open")
+                        store.log_event(run_id, "harness", "regression_reappeared",
+                                        f"{case.exploit_id}: was '{prev_status}', reopened")
+                else:  # errored — inconclusive, fail-closed for the gate
+                    errored += 1
+                    store.log_event(run_id, "harness", "regression_errored",
+                                    f"{case.case_id}: inconclusive ({verdict.rationale[:60]})")
 
-            details.append(row)
+                details.append(row)
 
-        # Cross-category regression: did fixing/replaying push any OTHER category's
-        # success count up? Exclude the categories we exercised this run — a replayed
-        # still-open case writes a fresh success verdict for its OWN category, which is
-        # not a cross-category effect. (A true cross-category signal needs a
-        # cross-VERSION comparison; within one replay window this is ~always empty.)
-        exercised = {r["category"] for r in details if r["result"] != "skipped"}
-        cross_category = [c for c in
-                          detect_cross_category_regression(passfail_before, store.passfail_rates())
-                          if c not in exercised]
-        if cross_category:
-            store.log_event(run_id, "harness", "cross_category_regression",
-                            f"success rose in: {', '.join(cross_category)}")
+            # Cross-category regression: did fixing/replaying push any OTHER category's
+            # success count up? Exclude the categories we exercised this run — a replayed
+            # still-open case writes a fresh success verdict for its OWN category, which is
+            # not a cross-category effect. (A true cross-category signal needs a
+            # cross-VERSION comparison; within one replay window this is ~always empty.)
+            exercised = {r["category"] for r in details if r["result"] != "skipped"}
+            cross_category = [c for c in
+                              detect_cross_category_regression(passfail_before, store.passfail_rates())
+                              if c not in exercised]
+            if cross_category:
+                store.log_event(run_id, "harness", "cross_category_regression",
+                                f"success rose in: {', '.join(cross_category)}")
 
-        unbind_tracer(_trace_token)
         store.end_run(run_id, store.cost_summary(run_id)["usd"])
 
     # CLI-contract view: the published shape the caller (cli.regress) and any

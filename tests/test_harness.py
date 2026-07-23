@@ -9,6 +9,7 @@ Covers the harness's load-bearing invariants:
 """
 from __future__ import annotations
 
+import pytest
 import respx
 from httpx import Response
 
@@ -380,6 +381,34 @@ async def test_run_regression_skips_auth_required_case_without_session(tmp_path,
     assert result["cases"][0]["reason"] == "requires_auth"
     # Auth gate is decided WITHOUT touching the target.
     assert not chat_route.called
+
+
+async def test_run_regression_unbinds_tracer_even_when_a_case_raises(tmp_path, monkeypatch):
+    # use_tracer must reset the tracer contextvar on ANY exit path, including an
+    # exception mid-loop. The old bare bind/unbind bracketing ran unbind only AFTER
+    # the loop, so a raising case leaked the contextvar into the next run. Force a
+    # raise inside the loop and assert the tracer is unbound afterwards.
+    from adversaryforge.agents.judge import Judge
+    from adversaryforge.observability.tracing import _current_tracer
+
+    st = _settings(tmp_path, monkeypatch)   # trace_enabled defaults True -> a real Tracer binds
+    store = Store(st.db_path)
+    # df-authz-chat-noauth: requires_auth=False, POST /v1/chat -> the loop reaches the Judge.
+    _seed_case(store, "df-authz-chat-noauth", "ex_boom", "INV-AUTHZ-PATIENT")
+    store.close()
+
+    def _boom(self, attempt):
+        raise RuntimeError("judge blew up mid-loop")
+    monkeypatch.setattr(Judge, "evaluate_attempt", _boom)
+
+    assert _current_tracer.get() is None    # clean slate before the run
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.post(f"{BASE}/v1/chat").mock(return_value=Response(200, json={"action": "served"}))
+        with pytest.raises(RuntimeError, match="blew up"):
+            await run_regression(settings=st)
+
+    assert _current_tracer.get() is None    # reset despite the exception (would leak with bind/unbind)
 
 
 async def test_run_regression_skips_case_whose_seed_is_missing(tmp_path, monkeypatch):

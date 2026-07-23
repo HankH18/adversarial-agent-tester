@@ -34,3 +34,6 @@ artifacts/live/
 # Editor
 .vscode/
 .idea/
+
+# Workflow subagent worktrees (transient)
+.claude/worktrees/

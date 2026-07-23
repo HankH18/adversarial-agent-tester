@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -244,6 +245,22 @@ def _playbook(invariant: str) -> dict[str, str]:
     return _INVARIANT_PLAYBOOK.get((invariant or "").strip().upper(), _GENERIC_PLAYBOOK)
 
 
+# ─────────────────────── reproducibility normalization ────────────────────
+# The committed VULN-*.md must be byte-reproducible: regenerating a report for
+# the SAME finding must not churn the git diff. Live per-run timing (a burst's
+# elapsed time, a response latency — e.g. "228ms") is genuine measurement noise,
+# not part of the finding, so every latency figure in the prose is collapsed to
+# a stable placeholder. The digit prefix is required, so tokens like
+# "latency_ms<=150" (a stable threshold, no measured value) are left untouched.
+_LATENCY_RE = re.compile(r"\d+(?:\.\d+)?\s*ms\b")
+
+
+def _normalize_latency(text: str) -> str:
+    """Redact volatile latency figures ("228ms") to a stable placeholder so the
+    committed report is byte-identical run-to-run for an unchanged finding."""
+    return _LATENCY_RE.sub("<elapsed>ms", text or "")
+
+
 # ─────────────────────── reproduction rendering ───────────────────────────
 def _render_request_detail(turn: TranscriptTurn) -> str:
     """Best-effort HTTP line from a turn's raw payload, if present."""
@@ -271,7 +288,7 @@ def build_reproduction(transcript: Iterable[TranscriptTurn]) -> list[str]:
     ]
     turns = list(transcript)
     for turn in turns:
-        content = (turn.content or "").rstrip()
+        content = _normalize_latency((turn.content or "").rstrip())
         if turn.role == "attacker":
             http = _render_request_detail(turn)
             head = "Send the following request to the Co-Pilot"
@@ -340,6 +357,10 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
     category = _enum(exploit.category)
     invariant = (exploit.target_invariant or "").strip()
     play = _playbook(invariant)
+    # Normalize volatile latency in the observed prose once, up front, so every
+    # field derived from it (summary, clinical impact, observed behavior) stays
+    # byte-reproducible for an unchanged finding.
+    observed = _normalize_latency((exploit.observed or "").strip())
 
     cat_label = _CATEGORY_LABEL.get(category, category.replace("_", " ").title())
     inv_label = invariant or "the target safety invariant"
@@ -351,7 +372,7 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
     summary = (
         f"An adversarial attempt in the {cat_label} category falsified the "
         f"{inv_label} invariant of the AgentForge Clinical Co-Pilot. "
-        f"Observed: {(exploit.observed or '').strip()} "
+        f"Observed: {observed} "
         f"The target should instead have exhibited: "
         f"{(exploit.expected_safe or '').strip()}"
     )
@@ -379,10 +400,10 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
         summary=summary,
         # Weave the actual observed disclosure into the impact so two findings that
         # share an invariant do NOT emit byte-identical (and possibly wrong) text.
-        clinical_impact=(f"Observed: {exploit.observed.strip()} {play['impact']}"
-                         if exploit.observed and exploit.observed.strip() else play["impact"]),
+        clinical_impact=(f"Observed: {observed} {play['impact']}"
+                         if observed else play["impact"]),
         reproduction=reproduction,
-        observed_behavior=(exploit.observed or "").strip(),
+        observed_behavior=observed,
         expected_behavior=(exploit.expected_safe or "").strip(),
         remediation=play["remediation"],
         fix_validation=fix_validation,
@@ -437,8 +458,10 @@ def render_markdown(report: VulnReport) -> str:
         "",
         "| Field | Value |",
         "| --- | --- |",
+        # Report ID is the stable content hash of the finding and IS committed.
+        # The per-run exploit_id (ex_…) is deliberately omitted: it changes every
+        # run for an unchanged finding and would churn the committed report.
         f"| Report ID | `{report.report_id}` |",
-        f"| Exploit ID | `{report.exploit_id}` |",
         f"| Severity | **{_enum(report.severity).upper()}** |",
         f"| Category | {_CATEGORY_LABEL.get(_enum(report.category), _enum(report.category))} |",
         f"| Status | {report.status} |",

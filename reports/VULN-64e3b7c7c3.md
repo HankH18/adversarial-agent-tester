@@ -3,7 +3,6 @@
 | Field | Value |
 | --- | --- |
 | Report ID | `VULN-64e3b7c7c3` |
-| Exploit ID | `ex_b2609f670269` |
 | Severity | **MEDIUM** |
 | Category | Denial of Service |
 | Status | published |
@@ -31,7 +30,7 @@ Observed: No throttling across 12 rapid requests (no 429) — rate limiting abse
 **3.** Observe the target's response (HTTP 200):
 
 ```
-burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in 604ms
+burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in <elapsed>ms
 ```
 
 **4.** Confirm the observed behavior below is present (and differs from the expected safe behavior). The finding reproduces when it is.

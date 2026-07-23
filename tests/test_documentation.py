@@ -99,6 +99,63 @@ def test_report_id_is_deterministic_per_exploit():
     assert build_report(ex).report_id == build_report(ex).report_id
 
 
+def test_rendered_markdown_omits_volatile_exploit_id():
+    # The per-run exploit_id (ex_…) must NOT appear in the committed markdown —
+    # it changes every run for an unchanged finding and would churn the diff. The
+    # stable report_id (the content hash) IS present.
+    ex = _exploit()
+    report = build_report(ex)
+    md = render_markdown(report)
+    assert ex.exploit_id not in md
+    assert report.exploit_id not in md
+    assert "Exploit ID" not in md
+    assert report.report_id in md  # stable id still committed
+
+
+def test_two_renders_of_same_exploit_are_byte_identical():
+    report = build_report(_exploit())
+    assert render_markdown(report) == render_markdown(report)
+
+
+def test_report_is_byte_reproducible_across_runs_of_same_finding():
+    # The SAME finding (same category + invariant + attacker turns) measured on two
+    # runs differs only in the per-run exploit_id and the live latency it recorded
+    # (burst elapsed time and the DoS rationale). The committed markdown must be
+    # byte-identical so `adversaryforge report` does not churn the git diff.
+    def _rate_limit_finding(latency_ms: int):
+        return _exploit(
+            severity=Severity.medium,
+            invariant="INV-RATE-LIMIT",
+            observed=f"Response took {latency_ms}ms > 150ms budget — no throttling seen.",
+            expected="latency_ms<=150; the burst must be throttled with HTTP 429.",
+            transcript=[
+                TranscriptTurn(role="attacker", content="[burst x12] GET /health"),
+                TranscriptTurn(
+                    role="target",
+                    content=f"burst statuses=[200, 200, 200] in {latency_ms}ms",
+                    http_status=200,
+                ),
+            ],
+        )
+
+    run_a = _rate_limit_finding(228)
+    run_b = _rate_limit_finding(311)
+    report_a = build_report(run_a)
+    report_b = build_report(run_b)
+
+    # Different per-run exploit_id, same stable finding id.
+    assert run_a.exploit_id != run_b.exploit_id
+    assert report_a.report_id == report_b.report_id
+
+    md_a = render_markdown(report_a)
+    md_b = render_markdown(report_b)
+    assert md_a == md_b  # byte-identical committed report
+
+    # The volatile latency figures do not leak verbatim into the committed prose.
+    assert "228ms" not in md_a
+    assert "311ms" not in md_b
+
+
 def test_critical_triggers_human_approval_and_draft():
     report = build_report(_exploit(severity=Severity.critical))
     assert report.requires_human_approval is True

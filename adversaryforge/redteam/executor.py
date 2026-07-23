@@ -44,6 +44,14 @@ class SeedExecutor:
                     "message": None,                      # supplied via override_messages
                     "conversation_id_from_step": extra_i - 1,  # thread the conversation
                 }))
+        # Symmetric TRUNCATE: a variant SHORTER than the seed (e.g. a "drop a turn"
+        # transform) would otherwise leave the trailing original steps running, so the
+        # frozen variant no longer describes the executed attack. Run only as many turns
+        # as the override supplies, making the transcript exactly the variant. (All-chat
+        # seeds only — same guarantee the grow branch relies on.)
+        elif (override_messages is not None and len(override_messages) < len(steps)
+                and all(s.kind == "chat" for s in steps)):
+            steps = steps[:len(override_messages)]
 
         for i, step in enumerate(steps):
             msg_override = None

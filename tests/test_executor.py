@@ -99,6 +99,24 @@ async def test_override_longer_than_steps_grows_into_multi_turn():
     assert json.loads(chat.calls.last.request.content)["message"] == "turn3"
 
 
+async def test_override_shorter_than_steps_truncates_to_the_variant():
+    # A "drop a turn" mutation is shorter than the seed; the executor must NOT run the
+    # trailing original steps (that would make the frozen variant no longer describe the
+    # executed attack). A 1-message override against a 2-step all-chat seed sends 1 turn.
+    seed = Seed.model_validate({
+        "id": "c", "category": "prompt_injection", "title": "t",
+        "target_invariant": "INV-INJECTION-INERT", "expected_safe": "x", "requires_auth": True,
+        "steps": [{"kind": "chat", "message": "base1", "patient_id": 1},
+                  {"kind": "chat", "message": "base2", "patient_id": 1}]})
+    with respx.mock(assert_all_called=False) as router:
+        chat = router.post(f"{BASE}/v1/chat").mock(return_value=Response(
+            200, json={"answer": "ok", "action": "withheld", "claims": [], "conversation_id": 9}))
+        async with TargetClient(agentforge_adapter(BASE), AnonymousSession(), _settings()) as c:
+            await SeedExecutor(c).run(seed, directive_id="t", override_messages=["only-turn"])
+    assert chat.call_count == 1  # truncated from 2 steps to 1 executed turn
+    assert json.loads(chat.calls.last.request.content)["message"] == "only-turn"
+
+
 async def test_burst_producer_fires_n_requests_and_records_statuses():
     # Exercise the real _burst producer (not just the Judge's rate-limit consumer):
     # it must fire burst_count requests and record the observed status set.
