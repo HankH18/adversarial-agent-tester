@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Report ID | `VULN-e28d1537bb` |
-| Exploit ID | `ex_b47f9c2f6a07` |
+| Exploit ID | `ex_e07f9d4ee754` |
 | Severity | **LOW** |
 | Category | Data Exfiltration |
 | Status | published |
