@@ -282,6 +282,29 @@ async def test_run_regression_errored_target_fails_closed(tmp_path, monkeypatch)
     assert result["cases"][0]["outcome"] == "error"
 
 
+async def test_regression_pass_resolves_the_exploit(tmp_path, monkeypatch):
+    # A passing regression (the invariant now HOLDS) marks the exploit 'resolved' — the
+    # wiring that makes reappearance reachable if a later run re-falsifies it. (Before
+    # this, nothing set 'resolved', so the reappearance path was dead code.)
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    store.record_exploit(ConfirmedExploit(
+        exploit_id="ex_fixable", attempt_id="at", verdict_id="vd",
+        category=AttackCategory.data_exfiltration, severity=Severity.critical,
+        target_invariant="INV-AUTHZ-PATIENT",
+        minimal_transcript=[TranscriptTurn(role="attacker", content="x")],
+        expected_safe="401", observed="was leaking"))
+    _seed_case(store, "df-authz-chat-noauth", "ex_fixable", "INV-AUTHZ-PATIENT")
+    store.close()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.post(f"{BASE}/v1/chat").mock(return_value=Response(401, json={}))  # defense holds → pass
+        result = await run_regression(settings=st)
+    assert result["passed"] >= 1
+    ex = {e["exploit_id"]: e for e in Store(st.db_path).list_exploits()}["ex_fixable"]
+    assert ex["status"] == "resolved"  # pass auto-resolves → reappearance now reachable
+
+
 async def test_run_regression_fails_and_reopens_resolved_exploit(tmp_path, monkeypatch):
     st = _settings(tmp_path, monkeypatch)
     store = Store(st.db_path)

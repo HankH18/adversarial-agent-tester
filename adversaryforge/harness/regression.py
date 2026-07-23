@@ -231,8 +231,13 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
                 result = decision["result"]
                 if result == "passed":
                     passed += 1
+                    # The invariant now HOLDS → mark the exploit resolved. This is what
+                    # makes the reappearance lifecycle reachable end-to-end: if a later
+                    # run re-falsifies a 'resolved' exploit, _decide_case flags it as a
+                    # reappearance (a previously-fixed finding is live again).
+                    store.set_exploit_status(case.exploit_id, "resolved")
                     store.log_event(run_id, "harness", "regression_pass",
-                                    f"{case.case_id}: invariant holds ({_enum(outcome)})")
+                                    f"{case.case_id}: invariant holds ({_enum(outcome)}) — exploit resolved")
                 elif result == "failed":
                     failed += 1
                     store.log_event(run_id, "harness", "regression_fail",

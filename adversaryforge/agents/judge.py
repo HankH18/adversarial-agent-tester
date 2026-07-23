@@ -140,7 +140,12 @@ class Judge:
               "passed": body.get("passed", verif.get("passed")),
               "claims_len": len(claims) if isinstance(claims, list) else None}
 
-        if status == 0:
+        # A burst turn stamps http_status = statuses[0] (the FIRST concurrent request),
+        # but carries the full per-request set in `_burst_statuses` and _judge_rate_limit
+        # does its own network-error accounting. So this generic unreachable-guard must
+        # NOT preempt a burst on a leading connection error — else [0,200,…,200] (real
+        # "no throttling") is wrongly dropped to inconclusive while [200,…,200,0] is not.
+        if status == 0 and "_burst_statuses" not in body:
             return self._verdict(view, Outcome.error, 1.0,
                                  "Target unreachable / network error.", evidence=ev)
 

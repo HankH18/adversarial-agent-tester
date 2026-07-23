@@ -75,9 +75,9 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 
 ## Cycle log
 
-> **Current suite: 156 tests passing** (`.venv/bin/python -m pytest -q`, 2026-07-22, after audit loops
-> 1–12). The per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
-> running count — for the live number, run pytest.
+> **Suite: 190+ tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
+> per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
+> running count.
 
 ### Cycle 4 — fine-grained execution tracing (lead) ✅ DONE
 - Built a contextvar-linked span tracer (`observability/tracing.py`) + a `spans` table (schema v3,

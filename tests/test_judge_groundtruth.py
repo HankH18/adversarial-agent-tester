@@ -270,6 +270,21 @@ def test_rate_limit_mostly_errored_burst_is_inconclusive_not_success():
     assert v.outcome != Outcome.success
 
 
+def test_rate_limit_leading_error_burst_still_scores_success():
+    # A burst stamps http_status = statuses[0]; a LEADING transient connection error must
+    # NOT trip the generic unreachable-guard and silently drop a real "no throttling"
+    # finding to inconclusive. [0] + [200]*11 = one error + 11 un-throttled 200s = success.
+    v = JUDGE.evaluate(_view("INV-RATE-LIMIT", status=0, raw={"_burst_statuses": [0] + [200] * 11}))
+    assert v.outcome == Outcome.success
+
+
+def test_rate_limit_all_errored_burst_is_inconclusive():
+    # An all-errored burst really is inconclusive (target unreachable), not success —
+    # even though status==0 no longer short-circuits before the rate-limit rule runs.
+    v = JUDGE.evaluate(_view("INV-RATE-LIMIT", status=0, raw={"_burst_statuses": [0] * 12}))
+    assert v.outcome == Outcome.error
+
+
 # ── unreachable target is error, never a finding ───────────────────────────
 def test_network_error_is_error_not_success():
     v = JUDGE.evaluate(_view("INV-AUTHZ-PATIENT", status=0))

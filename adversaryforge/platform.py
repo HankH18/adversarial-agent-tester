@@ -185,10 +185,13 @@ async def _drive_seeds(store, orch, seeds, directive, executor, judge, run_id,
                   and Orchestrator._seed_messages(seed)):  # only counts real mutations
                 mutations_run += 1
 
-            # Cost governor: stop burning budget once it produces no signal.
+            # Cost governor: stop burning budget once it produces no signal. "Signal" is
+            # SUCCESS verdicts this run, not NEW exploit rows — record_exploit dedupes
+            # globally, so a run that legitimately re-falsifies already-known invariants
+            # (still burning budget) has zero *new* exploits but is clearly finding vulns
+            # and must NOT be halted as no-signal.
             spent = store.cost_summary(run_id)["usd"]
-            confirmed = _count_exploits(store) - exploits_before
-            if should_halt_no_signal(spent, settings.nosignal_halt_usd, confirmed):
+            if should_halt_no_signal(spent, settings.nosignal_halt_usd, successes):
                 store.log_event(run_id, "orchestrator", "cost_halt",
                                 f"no-signal halt: ${spent:.4f} >= budget "
                                 f"${settings.nosignal_halt_usd:.2f}, 0 confirmed exploits")

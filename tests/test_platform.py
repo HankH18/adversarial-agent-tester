@@ -72,6 +72,27 @@ async def test_run_campaign_cost_governor_halts_on_no_signal(tmp_path, monkeypat
     assert "cost_halt" in actions
 
 
+async def test_cost_governor_does_not_halt_when_finding_signal_without_new_exploits(tmp_path, monkeypatch):
+    # "No signal" = zero SUCCESS verdicts, not zero NEW exploit rows. A run that produces
+    # successes (even ones record_exploit dedupes to no new rows) is finding vulns and
+    # must NOT be halted as no-signal, even over budget.
+    st = _settings(tmp_path, monkeypatch, budget="0.5")
+
+    async def fake_run_seed(self, seed, directive, executor, judge, run_id,
+                            mutator=None, n_variants=8):
+        self._store.log_cost(run_id, "redteam", "test", 0, 0, 1.0)  # over the 0.5 budget
+        return (None, Verdict(verdict_id="vd", attempt_id="at", outcome=Outcome.success,
+                              severity=Severity.high, confidence=0.9, method="deterministic",
+                              rationale="found a (known) vuln"))  # a SUCCESS, but records no exploit
+
+    monkeypatch.setattr(Orchestrator, "run_seed", fake_run_seed)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        result = await plat.run_campaign(settings=st, limit=1)
+    assert result.halted_no_signal is False   # success verdicts ARE signal → not halted
+    assert result.successes >= 1
+
+
 async def test_run_campaign_binds_tracer_during_the_loop(tmp_path, monkeypatch):
     st = _settings(tmp_path, monkeypatch, budget="0")  # governor disabled
 
