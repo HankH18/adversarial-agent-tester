@@ -84,7 +84,8 @@ def test_campaign_renders_result_fields(monkeypatch):
         run_id="run_xyz", target_version="v9", authenticated=False,
         directive_rationale="probe unauth surface", total=5,
         by_outcome={"failure": 4, "success": 1}, successes=1, exploits_new=1,
-        mutations_run=2, halted_no_signal=False)
+        mutations_run=2, halted_no_signal=False,
+        calibration_kappa=1.0, calibration_passed=True)
 
     async def _fake(**kwargs):
         return fake

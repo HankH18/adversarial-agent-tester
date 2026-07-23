@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from adversaryforge.agents.calibration import calibrate_judge
 from adversaryforge.agents.judge import Judge
 from adversaryforge.agents.orchestrator import Orchestrator
 from adversaryforge.config import Settings, get_settings
@@ -34,6 +35,8 @@ class CampaignResult:
     directive_rationale: str
     mutations_run: int = 0
     halted_no_signal: bool = False
+    calibration_kappa: float | None = None
+    calibration_passed: bool = True
 
 
 def should_halt_no_signal(spent_usd: float, budget_usd: float, confirmed: int) -> bool:
@@ -99,6 +102,27 @@ async def run_campaign(
         mode = "authenticated" if authed else "unauthenticated"
         run_id = store.start_run(settings.target_base_url, version, mode, authed,
                                  notes=f"seeds={len(library.seeds)}")
+
+        # ── Judge drift gate ─────────────────────────────────────────────────
+        # Calibrate the Judge against the frozen gold set BEFORE attacking. If Cohen's
+        # kappa falls below the threshold the Judge has drifted and its verdicts can't
+        # be trusted, so the campaign FAILS CLOSED rather than record findings we can't
+        # stand behind. (Set ADVERSARYFORGE_JUDGE_KAPPA_THRESHOLD=0 to disable.)
+        cal = calibrate_judge(judge, settings.judge_kappa_threshold)
+        store.log_event(run_id, "judge", "calibration",
+                        f"kappa={cal.kappa} passed={cal.passed} "
+                        f"({cal.agreements}/{cal.n} gold cases, threshold {cal.threshold})")
+        if not cal.passed:
+            store.log_event(run_id, "judge", "calibration_halt",
+                            f"Judge drift: kappa {cal.kappa} < {cal.threshold}; "
+                            f"disagreements={cal.disagreements}")
+            store.end_run(run_id, store.cost_summary(run_id)["usd"])
+            return CampaignResult(
+                run_id=run_id, target_version=version, authenticated=authed, total=0,
+                successes=0, by_outcome={}, exploits_new=0,
+                directive_rationale="halted: Judge failed calibration (drift gate)",
+                calibration_kappa=cal.kappa, calibration_passed=False)
+
         executor = SeedExecutor(client)
 
         directive = orch.next_directive(authenticated=authed)
@@ -157,6 +181,8 @@ async def run_campaign(
         directive_rationale=rationale,
         mutations_run=mutations_run,
         halted_no_signal=halted,
+        calibration_kappa=cal.kappa,
+        calibration_passed=True,
     )
 
 

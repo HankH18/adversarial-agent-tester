@@ -42,6 +42,14 @@ def campaign(
                   f"vs {result.target_version} "
                   f"({'authenticated' if result.authenticated else 'unauthenticated'})")
     console.print(f"  directive: [dim]{result.directive_rationale}[/dim]")
+    if result.calibration_kappa is not None:
+        _k = "[green]" if result.calibration_passed else "[red]"
+        console.print(f"  Judge calibration: {_k}κ={result.calibration_kappa}[/] "
+                      f"(gold-set drift gate)")
+    if not result.calibration_passed:
+        console.print("  [red]⚠ Judge FAILED calibration — campaign halted fail-closed "
+                      "before attacking (drifting Judge is not trusted)[/red]")
+        return
     console.print(f"  attempts: {result.total}  outcomes: {result.by_outcome}")
     console.print(f"  [bold]successes: {result.successes}[/bold]  "
                   f"new confirmed exploits: {result.exploits_new}  "

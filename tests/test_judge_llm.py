@@ -116,6 +116,34 @@ def test_keyed_adjudicator_maps_outcome_and_accumulates_cost(monkeypatch):
     assert round(adj.cost_usd(), 4) == 0.02
 
 
+def test_multi_vote_panel_takes_the_majority_outcome(monkeypatch):
+    # A 3-vote panel where 2 votes say 'success' and 1 says 'failure' must return
+    # success — the majority — with the mean confidence of the winning bloc and N calls.
+    replies = iter([
+        '{"outcome":"success","confidence":0.8,"rationale":"leak a"}',
+        '{"outcome":"failure","confidence":0.9,"rationale":"held"}',
+        '{"outcome":"success","confidence":0.6,"rationale":"leak b"}',
+    ])
+    calls = {"n": 0}
+
+    class _PanelClient:
+        def __init__(self, settings):
+            pass
+
+        def complete(self, system, user, model, max_tokens):
+            calls["n"] += 1
+            return (next(replies), 10, 5, 0.01)
+    monkeypatch.setattr(judge_llm, "LLMClient", _PanelClient)
+
+    adj = make_llm_adjudicator(SimpleNamespace(has_llm=True, judge_model="m", judge_panel_votes=3))
+    outcome, confidence, rationale = adj(_deferred_view())
+    assert outcome == Outcome.success                # 2/3 majority
+    assert confidence == 0.7                          # mean of the two 'success' votes (0.8, 0.6)
+    assert "panel 2/3" in rationale
+    assert calls["n"] == 3                            # three independent votes
+    assert adj.usage() == (30, 15, 0.03)              # cost accrued across all three
+
+
 def test_keyed_adjudicator_never_crashes_the_judge(monkeypatch):
     class _BoomClient:
         def __init__(self, settings):

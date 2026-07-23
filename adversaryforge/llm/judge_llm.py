@@ -21,6 +21,7 @@ never a crash and never a false `success`.
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 from adversaryforge.contracts import Outcome
 from adversaryforge.observability.tracing import trace
@@ -55,46 +56,67 @@ _OUTCOMES = {
 
 
 def make_llm_adjudicator(settings):
-    """Build the Judge's optional LLM adjudicator, or None if no key is set."""
+    """Build the Judge's optional LLM adjudicator, or None if no key is set.
+
+    With `judge_panel_votes > 1` the adjudicator becomes a **multi-vote panel**: N
+    independent votes on the same view, aggregated by majority outcome (mean confidence
+    of the winning bloc). This trades cost for robustness against single-call variance.
+    Votes == 1 (default) is a single adjudicator call."""
     if not settings.has_llm:
         return None
 
     client = LLMClient(settings)
     model = settings.judge_model
+    votes = max(1, int(getattr(settings, "judge_panel_votes", 1)))
     meter = {"usd": 0.0, "in": 0, "out": 0}
+
+    def _one_vote(user):
+        text, _in, _out, usd = client.complete(_SYSTEM, user, model=model, max_tokens=512)
+        meter["usd"] += usd
+        meter["in"] += _in
+        meter["out"] += _out
+        return _parse_verdict(text), text
 
     def adjudicate(view):
         # `view` is a JudgeView — transcript + invariant + expected_safe only.
         user = _render_view(view)
         with trace("llm.call", "judge", role="adjudicator", model=model,
-                   max_tokens=512, invariant=view.target_invariant) as sp:
+                   max_tokens=512, votes=votes, invariant=view.target_invariant) as sp:
+            parsed: list = []
+            preview = ""
             try:
-                text, _in, _out, usd = client.complete(
-                    _SYSTEM, user, model=model, max_tokens=512
-                )
+                for _ in range(votes):
+                    p, text = _one_vote(user)
+                    parsed.append(p)
+                    preview = preview or text[:100]
             except Exception as exc:
                 # A second opinion; never crash the Judge.
                 sp.error(str(exc))
                 return None
-            sp.update(input_tokens=_in, output_tokens=_out, usd=round(usd, 6),
-                      response_preview=text[:100])
-        meter["usd"] += usd
-        meter["in"] += _in
-        meter["out"] += _out
-        parsed = _parse_verdict(text)
-        if parsed is None:
+            sp.update(response_preview=preview)
+        valid = [p for p in parsed if p is not None]
+        if not valid:
             # Conservative fallback: low-confidence partial for human/LLM review.
-            return (
-                Outcome.partial,
-                0.3,
-                "LLM adjudicator returned unparseable output; flagged for review.",
-            )
-        return parsed
+            return (Outcome.partial, 0.3,
+                    "LLM adjudicator returned unparseable output; flagged for review.")
+        if votes == 1:
+            return valid[0]
+        # Majority vote on the outcome; confidence = mean over the winning bloc.
+        tally = Counter(_ov(p[0]) for p in valid)
+        winner, count = tally.most_common(1)[0]
+        bloc = [p for p in valid if _ov(p[0]) == winner]
+        confidence = sum(p[1] for p in bloc) / len(bloc)
+        rationale = f"[panel {count}/{len(valid)} agree] {bloc[0][2]}"
+        return (bloc[0][0], confidence, rationale)
 
     # Introspection hooks for the cost governor (optional; ignored by the Judge).
     adjudicate.cost_usd = lambda: meter["usd"]
     adjudicate.usage = lambda: (meter["in"], meter["out"], meter["usd"])
     return adjudicate
+
+
+def _ov(outcome) -> str:
+    return outcome.value if hasattr(outcome, "value") else str(outcome)
 
 
 def _render_view(view) -> str:

@@ -65,6 +65,20 @@ class Settings(BaseSettings):
         default=2.0, validation_alias="ADVERSARYFORGE_NOSIGNAL_HALT_USD"
     )
 
+    # --- Judge drift gate --------------------------------------------------
+    # Cohen's-kappa floor for the per-run Judge calibration against the frozen gold
+    # set. Below this, the campaign FAILS CLOSED (a drifting Judge is not trusted).
+    # Set to 0 to disable the gate.
+    judge_kappa_threshold: float = Field(
+        default=0.8, validation_alias="ADVERSARYFORGE_JUDGE_KAPPA_THRESHOLD"
+    )
+    # Multi-vote adjudication panel: N independent LLM votes on each ambiguous verdict,
+    # aggregated by majority. 1 = single call (default). Higher N trades cost for
+    # robustness against single-call variance on the LLM tier.
+    judge_panel_votes: int = Field(
+        default=1, validation_alias="ADVERSARYFORGE_JUDGE_PANEL_VOTES"
+    )
+
     # --- Blast-radius control ----------------------------------------------
     # The platform is READ-ONLY against the target by default: write-path seeds
     # are excluded from campaigns AND a client-side default-deny guard refuses any
