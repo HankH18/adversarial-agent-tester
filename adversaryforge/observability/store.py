@@ -424,6 +424,44 @@ class Store:
                                (exploit_id,)).fetchone()
         return ConfirmedExploit.model_validate_json(r["payload"]) if r else None
 
+    # ── crash-resume support ───────────────────────────────────────────────
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        r = self._conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+        return dict(r) if r else None
+
+    def latest_incomplete_run(self) -> str | None:
+        """The most recent run whose `ended_at` is NULL — i.e. a run that crashed or was
+        killed before it finished. end_run() (normal completion AND every halt path)
+        stamps ended_at, so an unstamped run is exactly an interrupted one."""
+        r = self._conn.execute(
+            "SELECT run_id FROM runs WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        return r["run_id"] if r else None
+
+    def get_run_plan(self, run_id: str) -> list[str] | None:
+        """The ordered seed-id plan persisted at campaign start (an orchestrator/plan
+        event), so a resume continues EXACTLY the originally-selected seeds — honoring
+        the original categories/sweep/limit filters, not a fresh full sweep."""
+        r = self._conn.execute(
+            "SELECT detail FROM events WHERE run_id=? AND agent='orchestrator' AND action='plan' "
+            "ORDER BY event_id LIMIT 1", (run_id,)).fetchone()
+        if not r or not r["detail"]:
+            return None
+        try:
+            return json.loads(r["detail"])
+        except (ValueError, TypeError):
+            return None
+
+    def completed_seeds(self, run_id: str) -> set[str]:
+        """Seed ids that completed for this run — a seed is DONE only when its base
+        (generation-0) attempt has a recorded verdict, so a seed interrupted mid-flight
+        (attempt written, verdict not) is re-run on resume rather than silently dropped."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT a.seed_id FROM verdicts v JOIN attempts a ON a.attempt_id=v.attempt_id "
+            "WHERE v.run_id=? AND a.generation=0 AND a.seed_id IS NOT NULL", (run_id,)
+        ).fetchall()
+        return {r["seed_id"] for r in rows}
+
     # ── helpers ────────────────────────────────────────────────────────────
     @staticmethod
     def _dedupe_key(exploit: ConfirmedExploit) -> str:

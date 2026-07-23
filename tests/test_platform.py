@@ -4,6 +4,7 @@ not the pure predicates. Fully offline: respx-mocked target, keyless settings, a
 monkeypatched Orchestrator.run_seed to control each seed's effect deterministically."""
 from __future__ import annotations
 
+import pytest
 import respx
 from httpx import Response
 
@@ -161,6 +162,58 @@ async def test_run_campaign_counts_mutations_on_partial_chat_seed(tmp_path, monk
         result = await plat.run_campaign(settings=st)
 
     assert result.mutations_run >= 1  # a partial on a message-bearing seed counts a mutation
+
+
+async def test_crash_then_resume_completes_only_unfinished_seeds(tmp_path, monkeypatch):
+    # Simulate a crash mid-campaign, then resume: exactly the seeds without a recorded
+    # verdict re-run, each seed runs once, and the run ends complete under the same id.
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    real = Orchestrator.run_seed
+    calls = {"n": 0}
+
+    async def crashing(self, seed, directive, executor, judge, run_id, mutator=None, n_variants=8):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("simulated crash mid-run")
+        return await real(self, seed, directive, executor, judge, run_id,
+                          mutator=mutator, n_variants=n_variants)
+
+    monkeypatch.setattr(Orchestrator, "run_seed", crashing)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.route().mock(return_value=Response(401, json={}))
+        with pytest.raises(RuntimeError):
+            await plat.run_campaign(settings=st, limit=5)
+
+    store = Store(st.db_path)
+    rid = store.latest_incomplete_run()
+    assert rid is not None                                   # crashed run is unstamped
+    assert store.get_run(rid)["ended_at"] is None
+    plan = store.get_run_plan(rid)
+    assert plan is not None and len(plan) == 5               # original plan persisted
+    assert len(store.completed_seeds(rid)) == 2              # seeds 1,2 done; 3 crashed pre-verdict
+
+    # Resume with the healthy run_seed.
+    monkeypatch.setattr(Orchestrator, "run_seed", real)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.route().mock(return_value=Response(401, json={}))
+        result = await plat.resume_campaign(rid, settings=st)
+
+    store2 = Store(st.db_path)
+    assert store2.get_run(rid)["ended_at"] is not None       # run now complete
+    assert store2.completed_seeds(rid) == set(plan)          # all 5 have verdicts
+    assert result.total == 3                                 # only the 3 remaining ran on resume
+    n_base = store2._conn.execute(
+        "SELECT COUNT(DISTINCT seed_id) FROM attempts WHERE run_id=? AND generation=0", (rid,)
+    ).fetchone()[0]
+    assert n_base == 5                                        # no seed double-run
+
+
+async def test_resume_with_no_incomplete_run_raises(tmp_path, monkeypatch):
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    with pytest.raises(ValueError):
+        await plat.resume_campaign(None, settings=st)        # nothing to resume
 
 
 def test_meter_judge_llm_logs_delta_not_cumulative(tmp_path):

@@ -7,6 +7,7 @@ LLM key and with or without a live session — degrading, never crashing.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from adversaryforge.agents.calibration import calibrate_judge
@@ -136,39 +137,13 @@ async def run_campaign(
             runnable = [s for s in runnable if s.id in set(directive.seed_ids)]
         if limit:
             runnable = runnable[:limit]
+        # Persist the ordered plan so a crashed run can resume EXACTLY these seeds.
+        store.log_event(run_id, "orchestrator", "plan", json.dumps([s.id for s in runnable]))
 
-        by_outcome: dict[str, int] = {}
-        successes = 0
-        mutations_run = 0
-        halted = False
-        exploits_before = _count_exploits(store)
-        tracer = Tracer(store, run_id) if settings.trace_enabled else None
-        with use_tracer(tracer):
-            for seed in runnable:
-                _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
-                                                 executor, judge, run_id,
-                                                 mutator=mutator, n_variants=n_variants)
-                out = _enum(verdict.outcome)
-                by_outcome[out] = by_outcome.get(out, 0) + 1
-                if verdict.outcome == Outcome.success:
-                    successes += 1
-                elif (verdict.outcome == Outcome.partial and mutator is not None
-                      and Orchestrator._seed_messages(seed)):  # only counts real mutations
-                    mutations_run += 1
-
-                # Cost governor: stop burning budget once it produces no signal.
-                spent = store.cost_summary(run_id)["usd"]
-                confirmed = _count_exploits(store) - exploits_before
-                if should_halt_no_signal(spent, settings.nosignal_halt_usd, confirmed):
-                    store.log_event(run_id, "orchestrator", "cost_halt",
-                                    f"no-signal halt: ${spent:.4f} >= budget "
-                                    f"${settings.nosignal_halt_usd:.2f}, 0 confirmed exploits")
-                    halted = True
-                    break
-
+        by_outcome, successes, mutations_run, halted, exploits_new = await _drive_seeds(
+            store, orch, runnable, directive, executor, judge, run_id, settings, mutator, n_variants)
         cost = store.cost_summary(run_id)["usd"]
         store.end_run(run_id, cost)
-        exploits_new = _count_exploits(store) - exploits_before
 
     return CampaignResult(
         run_id=run_id,
@@ -184,6 +159,92 @@ async def run_campaign(
         calibration_kappa=cal.kappa,
         calibration_passed=True,
     )
+
+
+async def _drive_seeds(store, orch, seeds, directive, executor, judge, run_id,
+                       settings, mutator, n_variants):
+    """Run each seed through the Judge, tallying outcomes under the cost governor.
+    Shared by run_campaign and resume_campaign so both paths behave identically.
+    Returns (by_outcome, successes, mutations_run, halted, exploits_new)."""
+    by_outcome: dict[str, int] = {}
+    successes = 0
+    mutations_run = 0
+    halted = False
+    exploits_before = _count_exploits(store)
+    tracer = Tracer(store, run_id) if settings.trace_enabled else None
+    with use_tracer(tracer):
+        for seed in seeds:
+            _, verdict = await orch.run_seed(seed, directive or _fallback_directive(seed),
+                                             executor, judge, run_id,
+                                             mutator=mutator, n_variants=n_variants)
+            out = _enum(verdict.outcome)
+            by_outcome[out] = by_outcome.get(out, 0) + 1
+            if verdict.outcome == Outcome.success:
+                successes += 1
+            elif (verdict.outcome == Outcome.partial and mutator is not None
+                  and Orchestrator._seed_messages(seed)):  # only counts real mutations
+                mutations_run += 1
+
+            # Cost governor: stop burning budget once it produces no signal.
+            spent = store.cost_summary(run_id)["usd"]
+            confirmed = _count_exploits(store) - exploits_before
+            if should_halt_no_signal(spent, settings.nosignal_halt_usd, confirmed):
+                store.log_event(run_id, "orchestrator", "cost_halt",
+                                f"no-signal halt: ${spent:.4f} >= budget "
+                                f"${settings.nosignal_halt_usd:.2f}, 0 confirmed exploits")
+                halted = True
+                break
+    return by_outcome, successes, mutations_run, halted, _count_exploits(store) - exploits_before
+
+
+async def resume_campaign(run_id: str | None = None, *, settings: Settings | None = None,
+                          n_variants: int = 8) -> CampaignResult:
+    """Resume a crashed/interrupted campaign under its ORIGINAL run_id, continuing
+    exactly the planned seeds that don't yet have a recorded verdict. This is native
+    durable-checkpoint resume: no run restarts from zero. With run_id=None, resumes the
+    most recent incomplete run (`ended_at IS NULL`)."""
+    settings = settings or get_settings()
+    store = Store(settings.db_path)
+    rid = run_id or store.latest_incomplete_run()
+    if rid is None:
+        raise ValueError("no incomplete run to resume")
+    run = store.get_run(rid)
+    if run is None:
+        raise ValueError(f"unknown run_id {rid!r}")
+    authed = bool(run.get("authenticated"))
+    if run.get("ended_at"):
+        return CampaignResult(run_id=rid, target_version=run.get("target_version") or "unknown",
+                              authenticated=authed, total=0, successes=0, by_outcome={},
+                              exploits_new=0, directive_rationale="run already complete")
+
+    adapter = agentforge_adapter(settings.target_base_url)
+    session = build_session(settings)
+    library = SeedLibrary.load()
+    orch = Orchestrator(store, library)
+    judge = Judge(llm_adjudicator=build_llm_adjudicator(settings))
+    mutator = build_mutator(settings)
+
+    # Reconstruct the ORIGINAL plan (persisted at start) and skip completed seeds.
+    plan = store.get_run_plan(rid) or [s.id for s in library.runnable(authenticated=authed)]
+    done = store.completed_seeds(rid)
+    by_id = {s.id: s for s in library.seeds}
+    pending = [by_id[sid] for sid in plan if sid in by_id and sid not in done]
+
+    async with TargetClient(adapter, session, settings) as client:
+        version = await _target_version(client)
+        executor = SeedExecutor(client)
+        directive = orch.next_directive(authenticated=authed)
+        store.log_event(rid, "orchestrator", "resume",
+                        f"{len(done)} of {len(plan)} seeds already complete; continuing {len(pending)}")
+        by_outcome, successes, mutations_run, halted, exploits_new = await _drive_seeds(
+            store, orch, pending, directive, executor, judge, rid, settings, mutator, n_variants)
+        store.end_run(rid, store.cost_summary(rid)["usd"])
+
+    return CampaignResult(
+        run_id=rid, target_version=version, authenticated=authed, total=len(pending),
+        successes=successes, by_outcome=by_outcome, exploits_new=exploits_new,
+        directive_rationale=f"resumed run {rid}: {len(done)} done, {len(pending)} remaining",
+        mutations_run=mutations_run, halted_no_signal=halted)
 
 
 def _count_exploits(store: Store) -> int:

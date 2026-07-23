@@ -59,6 +59,25 @@ def campaign(
 
 
 @app.command()
+def resume(run_id: str = typer.Argument("", help="Run id to resume (default: the most recent incomplete run).")):
+    """Resume a crashed/interrupted campaign — continue exactly the planned seeds that
+    never got a verdict, under the original run_id. Native durable-checkpoint resume."""
+    from adversaryforge.platform import resume_campaign
+
+    settings = get_settings()
+    try:
+        result = asyncio.run(resume_campaign(run_id or None, settings=settings))
+    except ValueError as exc:
+        console.print(f"[yellow]{exc}[/yellow]")
+        raise typer.Exit(1) from exc
+    console.print(f"[bold green]Resumed {result.run_id}[/bold green] "
+                  f"[dim]{result.directive_rationale}[/dim]")
+    console.print(f"  attempts this resume: {result.total}  outcomes: {result.by_outcome}")
+    console.print(f"  [bold]successes: {result.successes}[/bold]  "
+                  f"new confirmed exploits: {result.exploits_new}")
+
+
+@app.command()
 def status():
     """Print the observability snapshot the Orchestrator reads."""
     store = Store(get_settings().db_path)

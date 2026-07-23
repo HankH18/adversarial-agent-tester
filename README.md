@@ -59,6 +59,7 @@ cp .env.example .env      # then edit — see "Authentication & keys" below
 
 # 3-6. Run the platform (from the repo root)
 .venv/bin/python -m adversaryforge.cli campaign   # attack the live target
+.venv/bin/python -m adversaryforge.cli resume     # resume a crashed/interrupted campaign
 .venv/bin/python -m adversaryforge.cli status     # observability snapshot the Orchestrator reads
 .venv/bin/python -m adversaryforge.cli report     # (re)generate reports/*.md
 .venv/bin/python -m adversaryforge.cli regress    # re-run the fail-closed regression suite
