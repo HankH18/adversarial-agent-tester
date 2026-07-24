@@ -295,6 +295,17 @@ def _render_request_detail(turn: TranscriptTurn) -> str:
     return ""
 
 
+def _fence(content: str) -> str:
+    """A code-fence longer than the longest backtick run in ``content``, so target-controlled
+    text containing ``` cannot break out of the fence and inject markdown into a committed
+    report. Backtick-free content yields the standard 3-backtick fence (byte-stable)."""
+    longest = cur = 0
+    for ch in content:
+        cur = cur + 1 if ch == "`" else 0
+        longest = max(longest, cur)
+    return "`" * max(3, longest + 1)
+
+
 def build_reproduction(
     transcript: Iterable[TranscriptTurn], *, preserve_latency: bool = False
 ) -> list[str]:
@@ -318,16 +329,17 @@ def build_reproduction(
     for turn in turns:
         raw_content = (turn.content or "").rstrip()
         content = raw_content if preserve_latency else _normalize_latency(raw_content)
+        fence = _fence(content)  # longer than any backtick run in content → no fence break-out
         if turn.role == "attacker":
             http = _render_request_detail(turn)
             head = "Send the following request to the Co-Pilot"
             if http:
                 head += f" ({http})"
-            steps.append(f"{head}:\n\n```\n{content}\n```")
+            steps.append(f"{head}:\n\n{fence}\n{content}\n{fence}")
         else:  # target
             status = f" (HTTP {turn.http_status})" if turn.http_status is not None else ""
             steps.append(
-                f"Observe the target's response{status}:\n\n```\n{content}\n```"
+                f"Observe the target's response{status}:\n\n{fence}\n{content}\n{fence}"
             )
     steps.append(
         "Confirm the observed behavior below is present (and differs from the "

@@ -207,6 +207,33 @@ async def test_run_campaign_counts_mutations_on_partial_chat_seed(tmp_path, monk
     assert result.mutations_run >= 1  # a partial on a message-bearing seed counts a mutation
 
 
+async def test_one_seed_error_does_not_sink_the_campaign(tmp_path, monkeypatch):
+    # A recoverable bug in ONE seed (a regular Exception) must be logged and skipped — not
+    # crash the whole campaign or skip end_run (the F2 robustness guard).
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    real = Orchestrator.run_seed
+    calls = {"n": 0}
+
+    async def one_bad(self, seed, directive, executor, judge, run_id, mutator=None, n_variants=8):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise ValueError("recoverable bug in one seed")
+        return await real(self, seed, directive, executor, judge, run_id,
+                          mutator=mutator, n_variants=n_variants)
+
+    monkeypatch.setattr(Orchestrator, "run_seed", one_bad)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.route().mock(return_value=Response(401, json={}))
+        result = await plat.run_campaign(settings=st, limit=4)   # must NOT raise
+
+    store = Store(st.db_path)
+    assert store.get_run(result.run_id)["ended_at"] is not None   # completed; end_run ran
+    events = {e["action"] for e in store.agent_timeline(result.run_id)}
+    assert "seed_error" in events                                  # the bad seed was recorded
+    assert calls["n"] >= 3                                         # kept going past the bad seed
+
+
 async def test_crash_then_resume_completes_only_unfinished_seeds(tmp_path, monkeypatch):
     # Simulate a crash mid-campaign, then resume: exactly the seeds without a recorded
     # verdict re-run, each seed runs once, and the run ends complete under the same id.
@@ -217,7 +244,10 @@ async def test_crash_then_resume_completes_only_unfinished_seeds(tmp_path, monke
     async def crashing(self, seed, directive, executor, judge, run_id, mutator=None, n_variants=8):
         calls["n"] += 1
         if calls["n"] == 3:
-            raise RuntimeError("simulated crash mid-run")
+            # A genuine crash (process interrupt / Ctrl-C), modeled as a BaseException so it is
+            # NOT swallowed by the per-seed error guard — that guard handles recoverable seed
+            # bugs; a real crash must interrupt the campaign and leave a resumable run.
+            raise KeyboardInterrupt("simulated crash mid-run")
         return await real(self, seed, directive, executor, judge, run_id,
                           mutator=mutator, n_variants=n_variants)
 
@@ -225,7 +255,7 @@ async def test_crash_then_resume_completes_only_unfinished_seeds(tmp_path, monke
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
         router.route().mock(return_value=Response(401, json={}))
-        with pytest.raises(RuntimeError):
+        with pytest.raises(KeyboardInterrupt):
             await plat.run_campaign(settings=st, limit=5)
 
     store = Store(st.db_path)

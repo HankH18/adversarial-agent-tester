@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     nosignal_halt_usd: float = Field(
         default=2.0, validation_alias="ADVERSARYFORGE_NOSIGNAL_HALT_USD"
     )
+    # Hard spend ceiling per campaign: halt REGARDLESS of signal once cumulative LLM spend
+    # reaches this. The no-signal governor above only trips when zero exploits are found, so
+    # a productive-then-runaway run (one early success unlocks unbounded mutation spend) needs
+    # a ceiling too. 0 disables the hard cap.
+    max_campaign_usd: float = Field(
+        default=25.0, validation_alias="ADVERSARYFORGE_MAX_CAMPAIGN_USD"
+    )
 
     # --- Judge drift gate --------------------------------------------------
     # Cohen's-kappa floor for the per-run Judge calibration against the frozen gold

@@ -62,9 +62,13 @@ class Store:
     def __init__(self, db_path: Path | str) -> None:
         self.db_path = str(db_path)
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.db_path)
+        # 30s busy timeout (was the 5s default): under WAL, a write held by a concurrent
+        # campaign or the one-time migration ALTER can exceed 5s; wait rather than raise
+        # `database is locked` and (via the per-seed guard) drop work.
+        self._conn = sqlite3.connect(self.db_path, timeout=30.0)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL;")
+        self._conn.execute("PRAGMA busy_timeout=30000;")
         self._conn.execute("PRAGMA foreign_keys=ON;")
         self.apply_migrations()
 

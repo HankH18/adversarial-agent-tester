@@ -75,9 +75,26 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 
 ## Cycle log
 
-> **Suite: 240 tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
+> **Suite: 241 tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
 > per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
 > running count.
+
+### Cycle 7 — audit-fix loop 2/3 (Fable lead + 3 auditors: platform-security / robustness / testing-the-tester) ✅ DONE
+- Testing-the-tester (highest value): the κ drift gate covered only 7/12 invariants and was **blind to
+  injection drift** (sabotaging `_judge_injection` kept κ=1.0). Expanded the gold set to all **11 rule-backed
+  invariants (22 cases)** and implemented the documented **"2+ flips fail"** rule, so a single-rule break now
+  fails closed regardless of gold-set size. Removed the orphaned `INV-NO-INVENTION` (fake coverage → folded
+  into WITHHOLD-UNGROUNDED). Added an A09 verbose-error branch to `_judge_info_disclosure` so the
+  error-oracle seed yields a real signal (was always `partial`).
+- Robustness: **hard per-campaign spend ceiling** (`max_campaign_usd`, halts regardless of signal — the
+  no-signal governor left a productive-then-runaway run uncapped); wrapped the per-seed loop so one seed's
+  bug is logged + skipped, not fatal (+ test); crash-resume now models a real interrupt (BaseException);
+  SQLite `busy_timeout` → 30s.
+- Platform self-security: confirmed SAFE (no blast-radius/cookie/path-traversal/key escape). Hardened the
+  **LLM adjudicator prompt** against target→evaluator injection (fenced untrusted transcript + inert-data
+  instruction); escaped report code-fences; deduped the keyless mutator against the base.
+- Full suite **241**, ruff clean, live κ=1.0. Registry now **11 invariants** (added transport, removed the
+  orphaned no-invention).
 
 ### Cycle 6 — audit-fix loop 1/3 (Fable lead + 3 auditors: correctness / spec / doc-honesty) ✅ DONE
 - Correctness: no critical/high bugs. 5 low fixes — hardened `_judge_transport` (401/403 + non-200 →

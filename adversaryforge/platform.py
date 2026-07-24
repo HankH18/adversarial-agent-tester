@@ -179,9 +179,18 @@ async def _drive_seeds(store, orch, seeds, directive, executor, judge, run_id,
     tracer = Tracer(store, run_id) if settings.trace_enabled else None
     with use_tracer(tracer):
         for seed in seeds:
-            _, verdict, breakthroughs = await orch.run_seed(
-                seed, directive or _fallback_directive(seed), executor, judge, run_id,
-                mutator=mutator, n_variants=n_variants)
+            try:
+                _, verdict, breakthroughs = await orch.run_seed(
+                    seed, directive or _fallback_directive(seed), executor, judge, run_id,
+                    mutator=mutator, n_variants=n_variants)
+            except Exception as exc:
+                # One seed's unexpected failure (store/contract/executor bug) must NOT sink
+                # the whole campaign and skip end_run. Record it and press on.
+                store.log_event(run_id, "orchestrator", "seed_error",
+                                f"seed {getattr(seed, 'id', '?')} raised "
+                                f"{type(exc).__name__}: {exc}")
+                by_outcome["error"] = by_outcome.get("error", 0) + 1
+                continue
             out = _enum(verdict.outcome)
             by_outcome[out] = by_outcome.get(out, 0) + 1
             if verdict.outcome == Outcome.success:
@@ -193,12 +202,20 @@ async def _drive_seeds(store, orch, seeds, directive, executor, judge, run_id,
             # confirmed successes so the cost governor doesn't halt a producing run.
             successes += breakthroughs
 
+            spent = store.cost_summary(run_id)["usd"]
+            # Hard spend ceiling: halt REGARDLESS of signal. The no-signal governor below
+            # only trips at zero exploits, so a productive-then-runaway run needs this cap.
+            if settings.max_campaign_usd and spent >= settings.max_campaign_usd:
+                store.log_event(run_id, "orchestrator", "cost_halt",
+                                f"hard cap: ${spent:.4f} >= max_campaign_usd "
+                                f"${settings.max_campaign_usd:.2f} — halting regardless of signal")
+                halted = True
+                break
             # Cost governor: stop burning budget once it produces no signal. "Signal" is
             # SUCCESS verdicts this run, not NEW exploit rows — record_exploit dedupes
             # globally, so a run that legitimately re-falsifies already-known invariants
             # (still burning budget) has zero *new* exploits but is clearly finding vulns
             # and must NOT be halted as no-signal.
-            spent = store.cost_summary(run_id)["usd"]
             if should_halt_no_signal(spent, settings.nosignal_halt_usd, successes):
                 store.log_event(run_id, "orchestrator", "cost_halt",
                                 f"no-signal halt: ${spent:.4f} >= budget "

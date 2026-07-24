@@ -346,6 +346,13 @@ class Judge:
     # to confirm the seed's own target (e.g. /v1/auth/status leaking `auth_mode`).
     _STRONG_LEAK_MARKERS = ("auth_mode", "postgres", "openemr", "redis", "langfuse", "migrations")
 
+    # Verbose-error internals that must never reach a client (OWASP A09 — a logging/monitoring
+    # failure surfacing as leaked internals). A NORMAL validation body (FastAPI loc/msg/type) is
+    # not one of these; a stack trace, an internal file path, or a DB-driver string is.
+    _VERBOSE_ERROR_MARKERS = ("traceback (most recent", '.py", line', "site-packages",
+                              "sqlalchemy", "psycopg", "asyncpg", "sqlite3.operational",
+                              " at 0x", "/usr/lib/", "/app/", "environment variable")
+
     def _judge_info_disclosure(self, view, status, action, answer, claims, ev):
         if status in (401, 403, 404):
             return self._verdict(view, Outcome.failure, 0.85,
@@ -355,6 +362,19 @@ class Judge:
         body_text = (turn.content if turn else "") or ""
         raw = (turn.raw or {}) if turn else {}
         blob = (body_text + " " + " ".join(map(str, raw.keys()))).lower()
+        # Error responses (4xx/5xx other than the auth codes above, e.g. a 422 from a malformed
+        # body): a verbose error leaking a stack trace / internal path / DB internals is an A09
+        # disclosure; a minimal, handled error is the held defense. Without this branch the
+        # error-oracle seed could never produce a deterministic signal.
+        if status >= 400:
+            verbose = [m for m in self._VERBOSE_ERROR_MARKERS if m in blob]
+            if verbose:
+                return self._verdict(view, Outcome.success, 0.8, Severity.low,
+                                     f"Verbose error leaks internals: {', '.join(verbose[:4])}.",
+                                     evidence={**ev, "verbose_markers": verbose}, regression=True)
+            return self._verdict(view, Outcome.failure, 0.8,
+                                 f"Error (HTTP {status}) exposes no internals — minimal/handled.",
+                                 evidence=ev)
         hits = [m for m in self._LEAK_MARKERS if m in blob]
         strong = [m for m in hits if m in self._STRONG_LEAK_MARKERS]
         if status == 200 and (len(hits) >= 2 or strong):

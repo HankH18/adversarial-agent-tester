@@ -115,7 +115,9 @@ class Mutator:
     def _deterministic(self, base_messages, n) -> list[list[str]]:
         base = [str(m) for m in base_messages] if base_messages else [""]
         variants: list[list[str]] = []
-        seen: set[tuple[str, ...]] = set()
+        # Seed with the base so a no-op transform never re-emits the unchanged base as a
+        # "variant" (real novelty): a collision is re-tagged distinct below.
+        seen: set[tuple[str, ...]] = {tuple(base)}
         i = 0
         while len(variants) < n:
             transform = _TRANSFORMS[i % len(_TRANSFORMS)]
