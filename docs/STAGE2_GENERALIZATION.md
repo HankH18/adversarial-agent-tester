@@ -70,7 +70,7 @@ The Judge's control flow (`judge.py:87-114`) — try deterministic; if no decisi
 
 **C2 — The `WITHHELD_ANSWER` sentinel.** A specific English string from the target's source — `"I can't confirm that from this patient's record."` (`adapter.py:47-49`) — load-bearing in `_is_withheld()` and every held-defense branch, and in the calibration gold set.
 
-**C3 — Hand-authored seeds (the biggest coupling).** 23 seeds hard-naming this target's routes/bodies/canaries (`/v1/patients/1/observations`, `/v1/auth/status`, `POST /v1/documents` multipart, `patient_id: 1`). Nothing survives a target swap.
+**C3 — Hand-authored seeds (the biggest coupling).** 27 seeds hard-naming this target's routes/bodies/canaries (`/v1/patients/1/observations`, `/v1/auth/status`, `POST /v1/documents` multipart, `patient_id: 1`). Nothing survives a target swap.
 
 **C4 — The Judge's invariant dispatch.** `_deterministic()` dispatches on 10 hard-coded invariant ids (`judge.py:148-159`). An unknown app carrying none of them falls straight to the LLM/partial path.
 

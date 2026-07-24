@@ -31,7 +31,7 @@
 |---|------|--------|-------|
 | G1 | Deployed target live + submitted URL | Stage 1 / hard gate | ✅ live |
 | G2 | `THREAT_MODEL.md` — full surface + ~500-word summary | Stage 2 / hard gate | ✅ built (543-word summary, 6 cats, OWASP) |
-| G3 | `evals/` — reproducible cases across ≥3 attack categories | Stage 3 / hard gate | ✅ 23 seeds, 6 cats (8 unauth live + 15 auth staged) |
+| G3 | `evals/` — reproducible cases across ≥3 attack categories | Stage 3 / hard gate | ✅ 27 seeds, 6 cats (9 unauth + 18 auth; incl. 4 OWASP-gap seeds: A06/A09/A10/LLM03) |
 | G4 | ≥1 agent role running LIVE against deploy | Stage 3 / hard gate | ✅ full spine ran live |
 | G5 | `ARCHITECTURE.md` — multi-agent, ~500-word summary, diagram | Stage 4 / hard gate | ✅ exists |
 | G6 | `USERS.md` | Submission | ✅ 4 personas + why-automation |

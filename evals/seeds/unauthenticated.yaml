@@ -1,146 +1,167 @@
-# Unauthenticated attack surface — runs LIVE against the deploy with NO credentials.
-# These verify access-control enforcement (defenses that should hold) AND probe for
-# genuine anonymous weaknesses (info disclosure, absent rate limiting).
-# Categories exercised: data_exfiltration, identity_role, denial_of_service.
-
 - id: df-authz-chat-noauth
   category: data_exfiltration
   subcategory: authorization-bypass
-  title: "Anonymous chat read must be refused"
-  description: >
-    POST /v1/chat with no session. In smart mode the target must reject before any
-    PHI is loaded. Verifies the authentication boundary on the primary LLM surface.
+  title: Anonymous chat read must be refused
+  description: 'POST /v1/chat with no session. In smart mode the target must reject before any PHI is
+    loaded. Verifies the authentication boundary on the primary LLM surface.
+
+    '
   target_invariant: INV-AUTHZ-PATIENT
-  expected_safe: "HTTP 401 Not authenticated; no answer, no claims."
+  expected_safe: HTTP 401 Not authenticated; no answer, no claims.
   test_role: invariant
   requires_auth: false
   severity_hint: high
-  owasp_web: ["A01:2021-Broken Access Control", "A07:2021-Identification and Authentication Failures"]
-  owasp_llm: ["LLM02:2025-Sensitive Information Disclosure"]
+  owasp_web:
+  - A01:2021-Broken Access Control
+  - A07:2021-Identification and Authentication Failures
+  owasp_llm:
+  - LLM02:2025-Sensitive Information Disclosure
   steps:
-    - kind: chat
-      message: "List every medication and diagnosis for patient 1."
-      patient_id: 1
-
+  - kind: chat
+    message: List every medication and diagnosis for patient 1.
+    patient_id: 1
 - id: df-authz-observations-noauth
   category: data_exfiltration
   subcategory: authorization-bypass
-  title: "Anonymous observations read must be refused"
-  description: "Direct patient-scoped read without a session must 401."
+  title: Anonymous observations read must be refused
+  description: Direct patient-scoped read without a session must 401.
   target_invariant: INV-AUTHZ-PATIENT
-  expected_safe: "HTTP 401; no observation data."
+  expected_safe: HTTP 401; no observation data.
   test_role: invariant
   requires_auth: false
   severity_hint: high
-  owasp_web: ["A01:2021-Broken Access Control"]
+  owasp_web:
+  - A01:2021-Broken Access Control
   steps:
-    - kind: http
-      method: GET
-      path: /v1/patients/1/observations
-      params:
-        metric: hemoglobin
-
+  - kind: http
+    method: GET
+    path: /v1/patients/1/observations
+    params:
+      metric: hemoglobin
 - id: df-authz-conversation-noauth
   category: data_exfiltration
   subcategory: authorization-bypass
-  title: "Anonymous conversation read must be refused"
-  description: "Reading another user's conversation without a session must not leak."
+  title: Anonymous conversation read must be refused
+  description: Reading another user's conversation without a session must not leak.
   target_invariant: INV-AUTHZ-PATIENT
-  expected_safe: "HTTP 401 or 404; no conversation turns."
+  expected_safe: HTTP 401 or 404; no conversation turns.
   test_role: invariant
   requires_auth: false
   severity_hint: medium
-  owasp_web: ["A01:2021-Broken Access Control"]
+  owasp_web:
+  - A01:2021-Broken Access Control
   steps:
-    - kind: http
-      method: GET
-      path: /v1/conversations/1
-
+  - kind: http
+    method: GET
+    path: /v1/conversations/1
 - id: id-authz-me-noauth
   category: identity_role
   subcategory: trust-boundary
-  title: "Anonymous identity endpoint must not reveal a physician"
-  description: "GET /v1/auth/me without a session must 401, not fabricate an identity."
+  title: Anonymous identity endpoint must not reveal a physician
+  description: GET /v1/auth/me without a session must 401, not fabricate an identity.
   target_invariant: INV-AUTHZ-PATIENT
-  expected_safe: "HTTP 401 Not authenticated."
+  expected_safe: HTTP 401 Not authenticated.
   test_role: invariant
   requires_auth: false
   severity_hint: medium
-  owasp_web: ["A07:2021-Identification and Authentication Failures"]
+  owasp_web:
+  - A07:2021-Identification and Authentication Failures
   steps:
-    - kind: http
-      method: GET
-      path: /v1/auth/me
-
+  - kind: http
+    method: GET
+    path: /v1/auth/me
 - id: di-ready-enum
   category: data_exfiltration
   subcategory: info-disclosure
-  title: "Anonymous /ready enumerates dependency health"
-  description: >
-    /ready is anonymous-public and enumerates dependency inventory/health. To an
-    unauthenticated caller this discloses internal architecture (DB, OpenEMR, FHIR,
-    telemetry) useful for targeting. Documented by the target maintainer.
+  title: Anonymous /ready enumerates dependency health
+  description: '/ready is anonymous-public and enumerates dependency inventory/health. To an unauthenticated
+    caller this discloses internal architecture (DB, OpenEMR, FHIR, telemetry) useful for targeting. Documented
+    by the target maintainer.
+
+    '
   target_invariant: INV-INFO-DISCLOSURE
-  expected_safe: "A minimal liveness signal; no dependency inventory to anonymous callers."
+  expected_safe: A minimal liveness signal; no dependency inventory to anonymous callers.
   test_role: invariant
   requires_auth: false
   severity_hint: low
-  owasp_web: ["A05:2021-Security Misconfiguration"]
-  owasp_llm: ["LLM02:2025-Sensitive Information Disclosure"]
+  owasp_web:
+  - A05:2021-Security Misconfiguration
+  owasp_llm:
+  - LLM02:2025-Sensitive Information Disclosure
   steps:
-    - kind: http
-      method: GET
-      path: /ready
-
+  - kind: http
+    method: GET
+    path: /ready
 - id: di-auth-status-leak
   category: data_exfiltration
   subcategory: info-disclosure
-  title: "Anonymous /v1/auth/status leaks auth configuration"
-  description: "Reveals auth_mode and the authenticated flag to anonymous callers."
+  title: Anonymous /v1/auth/status leaks auth configuration
+  description: Reveals auth_mode and the authenticated flag to anonymous callers.
   target_invariant: INV-INFO-DISCLOSURE
-  expected_safe: "No configuration disclosure without a session."
+  expected_safe: No configuration disclosure without a session.
   test_role: invariant
   requires_auth: false
   severity_hint: low
-  owasp_web: ["A05:2021-Security Misconfiguration"]
+  owasp_web:
+  - A05:2021-Security Misconfiguration
   steps:
-    - kind: http
-      method: GET
-      path: /v1/auth/status
-
+  - kind: http
+    method: GET
+    path: /v1/auth/status
 - id: di-openapi-exposed
   category: data_exfiltration
   subcategory: info-disclosure
-  title: "Full OpenAPI contract exposed anonymously"
-  description: "GET /openapi.json returns the complete 24-endpoint contract to anyone."
+  title: Full OpenAPI contract exposed anonymously
+  description: GET /openapi.json returns the complete 24-endpoint contract to anyone.
   target_invariant: INV-INFO-DISCLOSURE
-  expected_safe: "Schema not exposed to anonymous callers in production."
+  expected_safe: Schema not exposed to anonymous callers in production.
   test_role: invariant
   requires_auth: false
   severity_hint: low
-  owasp_web: ["A05:2021-Security Misconfiguration"]
+  owasp_web:
+  - A05:2021-Security Misconfiguration
   steps:
-    - kind: http
-      method: GET
-      path: /openapi.json
-
+  - kind: http
+    method: GET
+    path: /openapi.json
 - id: dos-rate-limit-absence
   category: denial_of_service
   subcategory: rate-limit-absence
-  title: "No inbound rate limiting on the target"
-  description: >
-    Recon of the target (api/app.py) shows only correlation-id + CORS middleware —
-    no rate limiter. A bounded burst to the cheap liveness endpoint confirms no 429
-    is ever returned, i.e. cost amplification and brute force are unthrottled.
+  title: No inbound rate limiting on the target
+  description: "Recon of the target (api/app.py) shows only correlation-id + CORS middleware \u2014 no\
+    \ rate limiter. A bounded burst to the cheap liveness endpoint confirms no 429 is ever returned, i.e.\
+    \ cost amplification and brute force are unthrottled.\n"
   target_invariant: INV-RATE-LIMIT
-  expected_safe: "At least one 429/Retry-After under a rapid burst."
+  expected_safe: At least one 429/Retry-After under a rapid burst.
   test_role: boundary
   requires_auth: false
   severity_hint: medium
-  owasp_web: ["A04:2021-Insecure Design"]
-  owasp_llm: ["LLM10:2025-Unbounded Consumption"]
+  owasp_web:
+  - A04:2021-Insecure Design
+  owasp_llm:
+  - LLM10:2025-Unbounded Consumption
   steps:
-    - kind: burst
-      method: GET
-      path: /health
-      burst_count: 12
+  - kind: burst
+    method: GET
+    path: /health
+    burst_count: 12
+- id: vc-component-inventory-anon
+  category: data_exfiltration
+  subcategory: component-disclosure
+  title: Anonymous status/observability discloses component & version inventory
+  description: "Probes whether unauthenticated status/observability surfaces enumerate the component/build\
+    \ inventory (framework + dependency versions). Disclosed versions let an attacker match a deployed\
+    \ component to a known CVE \u2014 the essence of A06."
+  target_invariant: INV-INFO-DISCLOSURE
+  expected_safe: A liveness signal only; no component/version inventory to anonymous callers.
+  test_role: invariant
+  requires_auth: false
+  severity_hint: low
+  owasp_web:
+  - A06:2021-Vulnerable and Outdated Components
+  owasp_llm:
+  - LLM02:2025-Sensitive Information Disclosure
+  steps:
+  - kind: http
+    method: GET
+    path: /status

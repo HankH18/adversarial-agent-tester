@@ -478,7 +478,7 @@ gate runs at the head of each campaign; results are exported and tabled here.
 
 | Evidence stream | Metric column(s) | Threshold / pass criterion | Result |
 |---|---|---|---|
-| `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | ✅ ≥ 3 categories exercised live (6 defined in `evals/`, 23 seeds); reproduce with `adversaryforge campaign` then `status` |
+| `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | ✅ ≥ 3 categories exercised live (6 defined in `evals/`, 27 seeds); reproduce with `adversaryforge campaign` then `status` |
 | Contract tests | schema · producer pass · consumer pass | 100% both sides | ✅ producer + consumer pass — `contracts/` + `tests/test_contracts.py` |
 | Regression suite | case · replays passed / N · fixed / flaky / reappeared | fixed only if all-N hold | ✅ fail-closed gate runs live (`adversaryforge regress`); N-replay stability deferred — single-shot (AS_BUILT §1.5) |
 | Judge calibration | run · κ vs. gold · threshold | κ ≥ threshold (else fail-closed) | ⚪ deferred — per-run κ gate not built (AS_BUILT §1.3); anti-drift via the versioned deterministic ruleset + ground-truth test set |

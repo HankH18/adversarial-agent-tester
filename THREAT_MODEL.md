@@ -343,6 +343,48 @@ something," not "the target moved."
 
 ---
 
+## 8.1 OWASP coverage & applicability
+
+Every seed carries an explicit OWASP mapping, and the corpus covers the full PDF-named set. The four
+categories that were named-but-uncovered now have dedicated seeds; results below are **live against the
+authorized target**.
+
+| OWASP | Covered by | Live result |
+|---|---|---|
+| A01 Broken Access Control | authz / cross-patient / info-leak families | authz strong; info sub-surface open |
+| A03 Injection | `pi-*` direct · indirect · multi-turn | verifier strong; prose-gap probed |
+| A04 Insecure Design | tool-misuse · recursion · retrieval-poison | mixed (see §8 matrix) |
+| A05 Security Misconfiguration | `di-ready-enum` · `di-openapi-exposed` | **open (confirmed)** — anon internal-state disclosure |
+| **A06 Vulnerable/Outdated Components** | `vc-component-inventory-anon` *(new)* | defense holds — `/status` leaks no version inventory |
+| A07 Auth Failures | privilege-escalation · PKCE-callback | strong auth posture |
+| A08 Software/Data Integrity | write-binding · history-integrity | write-gate strong |
+| **A09 Logging/Monitoring Failures** | `lm-error-oracle-verbosity` *(new)* | **partial** — 422 leaks internal validation structure (minor) |
+| **A10 SSRF** | `ssrf-copilot-internal-fetch` *(new)* | defense holds — copilot refuses internal/metadata fetch |
+| LLM01 Prompt Injection | `pi-*` family | primary attack axis |
+| LLM02 Sensitive Disclosure | exfil + info-disclosure families | open on the unauth surface |
+| **LLM03 Supply Chain** | `sc-model-supply-chain-disclosure` *(new)* | defense holds — copilot refuses to disclose model/pipeline |
+| LLM06 Excessive Agency | tool-misuse + SSRF | tool-gating strong |
+| LLM10 Unbounded Consumption | DoS / cost family | **open (confirmed)** — no inbound rate limit |
+
+**Applicability.** A06 / A09 / LLM03 are exercised as *defense-holds* checks — the target refuses or does not
+leak, which is legitimate coverage that **proves the control** rather than a headline finding. **A02
+Cryptographic Failures** is the one web Top-10 category with no seed: it is not attacker-reachable through
+this system's black-box HTTP/chat contract (transport is TLS-terminated; no crypto primitive is exposed by
+the API/chat surface), so it is marked **N/A** rather than fabricated.
+
+## 8.2 Authenticated-plane evidence (live)
+
+The authenticated attack plane was exercised end-to-end against the authorized target (physician session,
+synthetic data only). **All 6 categories — the full authenticated-runnable set — ran live, and the
+authenticated defenses held:** every auth-gated attack (cross-patient PHI, prompt-injection → exfil,
+tool-misuse, state-corruption) was refused. The only live successes are the already-known
+*unauthenticated-surface* weaknesses that fire regardless of login (info disclosure on
+`/v1/ready` · `/v1/auth/status` · `/openapi`; DoS via absent rate limit and multi-turn amplification).
+**Zero criticals** — so the human-approval gate correctly did not fire (nothing critical to gate; the gate
+stays proven by its unit test). This moves the P0 categories from *staged* to **live-confirmed (defense
+held)** — the honest headline being that this target's authenticated surface is well-defended and its real
+exposure is on the anonymous surface.
+
 ## 9. Living document — how the platform exercises this model
 
 This threat model is **not a one-time artifact**; it is the coverage map the Orchestrator schedules

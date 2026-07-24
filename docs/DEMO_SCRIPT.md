@@ -95,7 +95,7 @@ that one call cost. The trace also shows every `target.request` (method/path/sta
 Judge decision, the exact `judge.rule` that fired with its rationale.
 
 ## 6. The adaptive Red Team (~30s — the differentiator)
-Show `adversaryforge seeds` (23 seeds, 6 categories, boundary/invariant/regression roles). Explain the
+Show `adversaryforge seeds` (27 seeds, 6 categories, boundary/invariant/regression roles). Explain the
 **mutation loop**: when the Judge returns *partial*, the Red Team autonomously generates N variants of
 the attack, re-runs and re-judges each, and promotes any breakthrough — no human telling it what to try
 next. (`mutation_breakthrough` events appear on the observability timeline.)

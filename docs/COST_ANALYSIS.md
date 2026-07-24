@@ -66,7 +66,7 @@ How the current findings were produced without spending anything through the pla
 **What a keyed run would meter.** The moment `ANTHROPIC_API_KEY` is set, every call is
 metered at the agent level via `store.log_cost(run_id, agent, model, in, out, usd)`
 and surfaced by `store.cost_summary()`. Using the grounded per-call costs in §2, a
-single **full 23-seed authenticated sweep** would meter roughly **$0.05–$0.30**,
+single **full 27-seed authenticated sweep** would meter roughly **$0.05–$0.30**,
 depending on how many attempts escalate to the LLM Judge and how many partials trigger
 mutation. A keyless sweep stays at **$0.00** and still produces verdicts and reports.
 
