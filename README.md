@@ -11,6 +11,8 @@ vulnerabilities in AI-assisted clinical chatbots.** Target #1 is the OpenEMR **C
 
 - **Deployed target under test:** https://agentforge.hankholcomb.com (authorized — user-owned;
   synthetic demo data only, never real PHI)
+- **Demo video (3–5 min):** https://www.loom.com/share/e672a42810b5461e9bf789d4a625255f — the platform
+  running live attacks against the deployed target
 - **Architecture:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · **Threat model:**
   [`THREAT_MODEL.md`](THREAT_MODEL.md) · **Users:** [`USERS.md`](USERS.md)
 - **Build ledger (historical, per-cycle):** [`docs/BUILD_LEDGER.md`](docs/BUILD_LEDGER.md) — for the current test count run `.venv/bin/python -m pytest -q`
