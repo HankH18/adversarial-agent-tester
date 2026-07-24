@@ -10,11 +10,10 @@
 > Sections authored from the design are complete (§1 identification, §2 architecture diagram, §3
 > data-flow diagram, §4 auth model, §5 dependency inventory, §8 sample postmortem, §9 control
 > attestations, §10 sign-off block). **§7 (test evidence) is populated from reproducible platform
-> output** — the eval, contract, and regression streams are real and reproducible from the CLI; only the
-> Cohen's-κ calibration row remains deferred and is marked as such, not fabricated. **§6 (platform
-> self-scan: Semgrep / pip-audit / SBOM) has not been run** and is a deferred item — the method is
-> stated and no result is invented. A reviewer is asked to accept a truthful "not yet measured, here is
-> the method" over a fabricated result — nothing in §6 or §7 is invented.
+> output** — the eval, contract, regression, and **per-run Judge-calibration (Cohen's-κ)** streams are
+> real and reproducible from the CLI. **§6 (platform self-scan) has now been run** on 2026-07-24
+> (`pip-audit` → no known CVEs; `bandit` → 4 Low / 0 Med / 0 High, all accepted) and is tabled verbatim.
+> Nothing in §6 or §7 is invented.
 >
 > **Companion artifacts (referenced, not duplicated):** the full architecture is
 > [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md); the interaction diagram, message schemas, trust
@@ -458,8 +457,8 @@ dependencies from the lockfile rather than a floating resolve.
 
 ## 7. Test evidence (eval results)
 
-**Populated from reproducible platform output.** The eval, contract, and regression streams below are
-real and reproducible from the CLI; only the Cohen's-κ calibration row is deferred (⚪), not fabricated.
+**Populated from reproducible platform output.** The eval, contract, regression, and Cohen's-κ
+calibration streams below are real and reproducible from the CLI.
 
 **What will fill it.** Four evidence streams, each already designed:
 
@@ -487,11 +486,11 @@ gate runs at the head of each campaign; results are exported and tabled here.
 | `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | ✅ ≥ 3 categories exercised live (6 defined in `evals/`, 30 seeds); reproduce with `adversaryforge campaign` then `status` |
 | Contract tests | schema · producer pass · consumer pass | 100% both sides | ✅ producer + consumer pass — `contracts/` + `tests/test_contracts.py` |
 | Regression suite | case · replays passed / N · fixed / flaky / reappeared | fixed only if all-N hold | ✅ fail-closed gate runs live (`adversaryforge regress`); N-replay stability deferred — single-shot (AS_BUILT §1.5) |
-| Judge calibration | run · κ vs. gold · threshold | κ ≥ threshold (else fail-closed) | ⚪ deferred — per-run κ gate not built (AS_BUILT §1.3); anti-drift via the versioned deterministic ruleset + ground-truth test set |
+| Judge calibration | run · κ vs. gold · threshold | κ ≥ threshold (else fail-closed) | ✅ **built & live** — the per-run κ gate scores the frozen gold set at campaign start and fails closed below threshold (`agents/calibration.py`, wired in `platform.py` `run_campaign`; `tests/test_calibration.py`); **observed κ=1.0** on live runs. Also anti-drift via the versioned deterministic ruleset + ground-truth set |
 
-> Reviewer note: the platform is built and the eval / contract / regression streams are reproducible
-> from the CLI (see AS_BUILT.md). Only the Cohen's-κ calibration gate is deferred (⚪) and is never
-> fabricated.
+> Reviewer note: the platform is built and the eval / contract / regression / κ-calibration streams are
+> reproducible from the CLI (see AS_BUILT.md). N-replay regression stability remains single-shot (honestly
+> noted, §1.5); nothing here is fabricated.
 
 ---
 
@@ -627,5 +626,5 @@ To be completed by the reviewing security authority. Each control area is signed
 [`EVIDENCE_PACKET.md`](EVIDENCE_PACKET.md); tool/license claims trace to
 [`BUILD_VS_CONFIGURE.md`](BUILD_VS_CONFIGURE.md); target claims trace to
 [`../target/TARGET_PROFILE.md`](../target/TARGET_PROFILE.md) and the target repo. Sections §6 and §7 are
-honestly marked `⏳ POPULATED AT FINAL` because they require a running platform; no scan result or eval
-metric in this packet is fabricated.*
+**populated** from a real run (§6 self-scan executed 2026-07-24; §7 streams reproducible from the CLI,
+incl. the live per-run κ gate); no scan result or eval metric in this packet is fabricated.*

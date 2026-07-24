@@ -587,9 +587,12 @@ LangGraph. Framework for orchestration; schema for the contract.
   data loss; the migration approach (versioned schema + forward migration) is documented in the ATO
   packet. Storage is SQLite for the dev build, Postgres at scale; the schema is written to migrate
   between them.
-- **Queue:** regression runs and agent work items sit on a work queue; queue depth is monitored, and a
-  backing-up queue sheds to the next window rather than unboundedly growing — documented with the
-  load-test baseline.
+- **Queue (N/A at current scale — honest):** the shipped build has **no message queue**. The campaign
+  drives seeds sequentially under an `asyncio.Semaphore` concurrency cap plus a minimum-request-gap
+  self-throttle (`target/client.py`), and regression runs are invoked directly. A durable work queue with
+  depth monitoring and back-pressure (shed to the next window) is the documented **scale-time** design —
+  see the load-test baseline for where it becomes necessary — not a current component. The spec's
+  queue-depth requirement is conditional ("if the platform uses a queue"), so today it is N/A.
 
 ---
 

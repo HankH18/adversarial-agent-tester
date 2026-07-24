@@ -75,9 +75,21 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 
 ## Cycle log
 
-> **Suite: 236 tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
+> **Suite: 240 tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
 > per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
 > running count.
+
+### Cycle 6 — audit-fix loop 1/3 (Fable lead + 3 auditors: correctness / spec / doc-honesty) ✅ DONE
+- Correctness: no critical/high bugs. 5 low fixes — hardened `_judge_transport` (401/403 + non-200 →
+  inconclusive `error`, HSTS finding only on a served 200); wired the schema-v4 `finding_count` column
+  (`record_exploit` increments, `resilience_trend` reads it); tightened cross-version `being_fixed` to compare
+  success RATES at comparable volume (kills a fewer-attempts false-fire); added a `denial_of_service`
+  byte-repro test that exercises the preserve-latency branch.
+- Spec: surfaced `cost_rate()` in `status` — closes observability Q5's "rate" half from the CLI snapshot.
+- Honesty: fixed the ATO packet (κ gate DEFERRED→**built & live**; §6 self-scan deferred→**run**) + AS_BUILT
+  κ self-contradiction; reworded ARCHITECTURE §12 (no queue ships — semaphore + sequential await, queue = N/A
+  scale-time); refreshed stale counts (STAGE2 11→12 invariants, COST_ANALYSIS 27→30 seeds) + drift-proofed
+  AS_BUILT store cites to symbols (SCHEMA_VERSION 3→4). Full suite 240, ruff clean.
 
 ### Cycle 5 — final gap-audit + fix swarm (Fable lead + 6 build agents + adversarial verify) ✅ DONE
 - Full spec-conformance audit (6 read-only verifiers) against the extracted PDF, then a disjoint-path

@@ -303,6 +303,14 @@ class Store:
                      exploit.target_invariant, exploit.target_version, "open", dedupe,
                      _now(), exploit.model_dump_json()),
                 )
+                # Keep the schema-v4 per-run finding_count live: bump the run this
+                # exploit's attempt belongs to, so the column is a maintained counter
+                # (not dead state). Read back via resilience_trend()['finding_count'].
+                c.execute(
+                    "UPDATE runs SET finding_count = finding_count + 1 WHERE run_id = "
+                    "(SELECT run_id FROM attempts WHERE attempt_id = ?)",
+                    (exploit.attempt_id,),
+                )
             return True
         except sqlite3.IntegrityError:
             return False  # duplicate attack sequence — data-quality guard held
@@ -408,7 +416,7 @@ class Store:
     def resilience_trend(self) -> list[dict[str, Any]]:
         """Per run: success rate over completed verdicts. Falling = more resilient."""
         rows = self._conn.execute(
-            "SELECT r.run_id, r.started_at, r.target_version, "
+            "SELECT r.run_id, r.started_at, r.target_version, r.finding_count, "
             "SUM(CASE WHEN v.outcome='success' THEN 1 ELSE 0 END) succ, COUNT(v.verdict_id) tot "
             "FROM runs r LEFT JOIN verdicts v ON v.run_id=r.run_id "
             "GROUP BY r.run_id ORDER BY r.started_at"
@@ -417,6 +425,7 @@ class Store:
             {"run_id": r["run_id"], "started_at": r["started_at"],
              "target_version": r["target_version"], "successes": r["succ"] or 0,
              "total": r["tot"] or 0,
+             "finding_count": r["finding_count"] or 0,  # schema-v4 maintained per-run counter
              "success_rate": round((r["succ"] or 0) / r["tot"], 3) if r["tot"] else None}
             for r in rows
         ]

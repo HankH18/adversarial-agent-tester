@@ -378,6 +378,17 @@ def _succ(snapshot: dict, category: str) -> int:
     return int(((snapshot or {}).get(category) or {}).get(Outcome.success.value, 0) or 0)
 
 
+def _total(snapshot: dict, category: str) -> int:
+    """Total attempts for ``category`` across all outcomes in a passfail snapshot."""
+    return sum(int(v or 0) for v in ((snapshot or {}).get(category) or {}).values())
+
+
+def _succ_rate(snapshot: dict, category: str) -> float:
+    """Success (== vuln-found) RATE for ``category`` — 0.0 when never attempted."""
+    t = _total(snapshot, category)
+    return _succ(snapshot, category) / t if t else 0.0
+
+
 def detect_cross_version_regression(before: dict, after: dict) -> list[str]:
     """Flag a category that regressed BETWEEN TWO TARGET VERSIONS while another was fixed.
 
@@ -397,7 +408,14 @@ def detect_cross_version_regression(before: dict, after: dict) -> list[str]:
     the sorted list of regressed category names (empty when the pattern is absent).
     """
     # Nothing was being remediated across the bump → not the cross-fix pattern.
-    being_fixed = any(_succ(after, c) < _succ(before, c) for c in (before or {}))
+    # Compare success RATES (not raw counts) and only among categories genuinely
+    # exercised at BOTH versions, so merely probing a category fewer times at the new
+    # version can't masquerade as "being fixed" and manufacture a cross-fix signal.
+    being_fixed = any(
+        _total(before, c) > 0 and _total(after, c) > 0
+        and _succ_rate(after, c) < _succ_rate(before, c)
+        for c in (before or {})
+    )
     if not being_fixed:
         return []
     regressed = [

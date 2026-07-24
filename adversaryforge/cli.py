@@ -136,6 +136,15 @@ def status():
                           f"({row['llm_calls']} calls, "
                           f"{row['input_tokens']}+{row['output_tokens']} tok)")
 
+    # Observability Q5, the RATE half: "at what rate is cost scaling?"
+    rate = store.cost_rate()
+    if rate.get("usd_per_hour") is not None or rate.get("usd_per_run_slope") is not None:
+        console.print(
+            f"[bold]Cost scaling rate[/bold]  ${rate.get('usd_per_hour')}/hr · "
+            f"${rate.get('usd_per_call')}/call · trend={rate.get('trend')} "
+            f"(slope ${rate.get('usd_per_run_slope')}/run over "
+            f"{len(rate.get('per_run') or [])} recent runs)")
+
 
 @app.command()
 def seeds():

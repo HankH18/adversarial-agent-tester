@@ -99,6 +99,29 @@ def test_report_id_is_deterministic_per_exploit():
     assert build_report(ex).report_id == build_report(ex).report_id
 
 
+def test_dos_report_preserves_real_latency_digits():
+    # The byte-repro test only exercises the data_exfiltration SCRUB branch (its helper
+    # hard-codes that category). This covers the new denial_of_service PRESERVE branch:
+    # a DoS finding must keep its real latency digits — the evidence the report exists to
+    # convey — not scrub them to "<elapsed>ms".
+    ex = ConfirmedExploit(
+        exploit_id="ex_dos1", attempt_id="at_dos1", verdict_id="vd_dos1",
+        category=AttackCategory.denial_of_service, subcategory="cost-amplification",
+        severity=Severity.medium, target_invariant="INV-COST-BOUNDED",
+        minimal_transcript=[
+            TranscriptTurn(role="attacker", content="huge repeated input to amplify work"),
+            TranscriptTurn(role="target", content="…", http_status=200,
+                           raw={"_latency_ms": 9321.0}),
+        ],
+        expected_safe="latency_ms<=8000 on each turn; no runaway amplification.",
+        observed="Response took 9321ms > 8000ms budget — amplification/DoS signal.",
+    )
+    report = build_report(ex)
+    blob = " ".join([report.observed_behavior, report.summary, *report.reproduction])
+    assert "9321ms" in blob and "8000ms" in blob   # real digits preserved for a DoS finding
+    assert "<elapsed>ms" not in blob               # NOT scrubbed (that would gut the evidence)
+
+
 def test_rendered_markdown_omits_volatile_exploit_id():
     # The per-run exploit_id (ex_…) must NOT appear in the committed markdown —
     # it changes every run for an unchanged finding and would churn the diff. The

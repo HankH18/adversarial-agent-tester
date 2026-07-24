@@ -382,10 +382,13 @@ class Judge:
         headers = (turn.raw or {}).get("_response_headers") if turn and turn.raw else None
         if not isinstance(headers, dict):
             return None  # no captured headers (older stored attempt) → semantic/inconclusive
-        if status in (401, 403):
-            return self._verdict(view, Outcome.failure, 0.6,
-                                 f"Refused (HTTP {status}); transport posture not assessable here.",
-                                 evidence=ev)
+        if status != 200:
+            # Transport posture is assessable only on a SERVED 200. A refusal (401/403)
+            # or an error/redirect response did NOT evaluate transport — that is
+            # inconclusive (error), never a "held defense" and never an HSTS finding.
+            return self._verdict(view, Outcome.error, 0.6,
+                                 f"Transport posture assessed only on a served 200 (got HTTP {status}); "
+                                 "inconclusive.", evidence=ev)
         hsts = headers.get("strict-transport-security")
         if hsts:
             return self._verdict(view, Outcome.failure, 0.85,
