@@ -338,6 +338,14 @@ framework for orchestration, schema for the contract.
 Target selection is a **deterministic priority score** per attack category, recomputed from the
 Observability snapshot each cycle. No LLM is in this decision path — an LLM only narrates the result.
 
+> **As-built (honest):** the shipped scorer is an argmax over a subset of the terms below —
+> `base + coverage-gap + open-findings − saturation` (visible in the campaign directive line, e.g.
+> `Selected data_exfiltration (score 8.2): base=5 gap+0.2 open+3 sat+0`). It chooses the campaign's
+> **directive** (which category to focus and why). In the **default `sweep=True` campaign every runnable
+> seed still executes** (library order); the score prioritizes the directive/rationale, it does not yet
+> gate or reorder individual seed execution. The full five-term cost-aware formula below is the design
+> target; `w_regress`/`w_yield`/`w_cost` weighting is not yet wired.
+
 For each category *c*, the Orchestrator computes:
 
 ```
@@ -392,6 +400,11 @@ one hazard: **a regression test that passes because behavior drifted, not becaus
 3. **Replay on change.** When the Orchestrator signals a target change (new deploy) or a time window,
    the Harness re-runs the case. **Pass = the expected-safe assertion now holds AND the exploit
    assertion no longer holds.**
+   > **As-built (honest):** the replay is **invoked** — `adversaryforge regress` (operator) or the CI
+   > job — not yet auto-fired by a detected version delta; there is no daemon watching `/health` for a
+   > version change. What is real and shipped: fail-closed replay, **reappearance detection** (a resolved
+   > exploit that re-fails flips back to open), and the **cross-version regression** check. Wiring the
+   > `/health` version-read to auto-trigger `run_regression` on a delta is a small, well-scoped next step.
 4. **Distinguish fixed from drifted — the stability check.** Because LLM outputs are stochastic, a
    single green replay is not proof. Each regression case is replayed **N times**; it counts as
    *fixed* only if it holds across all N (and, for prose-level cases, the Judge's deterministic

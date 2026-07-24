@@ -23,9 +23,23 @@ if command -v uv >/dev/null 2>&1; then
   fi
 else
   HAVE_UV=0
-  echo "==> uv not found — falling back to python3 venv + pip"
-  # No version pin: the project supports Python 3.11+, so use whatever python3 resolves.
-  python3 -m venv .venv
+  echo "==> uv not found — falling back to venv + pip (uv is recommended; it provisions Python 3.12)"
+  # The project requires Python 3.11+. Pick the newest suitable interpreter and fail LOUDLY if
+  # only an older python3 is on PATH — a bare `python3` is often 3.9 (macOS/Anaconda default),
+  # which otherwise dies with a cryptic requires-python error mid-install.
+  PY=""
+  for c in python3.12 python3.11 python3; do
+    if command -v "$c" >/dev/null 2>&1 && \
+       "$c" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 11) else 1)' 2>/dev/null; then
+      PY="$c"; break
+    fi
+  done
+  if [ -z "$PY" ]; then
+    echo "ERROR: Python 3.11+ is required but none found on PATH (tried python3.12/python3.11/python3)." >&2
+    echo "       Install Python 3.11+, or (recommended) install uv: https://docs.astral.sh/uv/" >&2
+    exit 1
+  fi
+  "$PY" -m venv .venv
   .venv/bin/python -m pip install --upgrade pip
   .venv/bin/pip install -e '.[dev]'
 fi

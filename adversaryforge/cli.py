@@ -144,6 +144,10 @@ def status():
             f"${rate.get('usd_per_call')}/call · trend={rate.get('trend')} "
             f"(slope ${rate.get('usd_per_run_slope')}/run over "
             f"{len(rate.get('per_run') or [])} recent runs)")
+    else:
+        # Always surface the metric (even keyless), so the observability question is visibly answered.
+        console.print("[bold]Cost scaling rate[/bold]  n/a — no LLM spend recorded yet "
+                      "(run a `campaign` with an API key; the deterministic tier is $0)")
 
 
 @app.command()
@@ -212,8 +216,9 @@ def trace(run_id: str = typer.Argument("", help="Run id (default: the most recen
         run_id = row["run_id"] if row else ""
     spans = store.get_spans(run_id) if run_id else []
     if not spans:
-        console.print(f"[yellow]No spans for run '{run_id}'[/yellow] — tracing disabled, "
-                      "no runs yet, or wrong id.")
+        console.print(f"[yellow]No spans for run '{run_id}'[/yellow] — spans are emitted by "
+                      "`campaign`/`resume`/`regress`, not by `seed-published`/`seed-demo`. Run a "
+                      "campaign or `regress` first, then `trace`.")
         raise typer.Exit(1)
     console.print(f"[bold]Execution trace — {run_id}[/bold]  "
                   f"({len(spans)} spans across {len({s['agent'] for s in spans})} agents)")

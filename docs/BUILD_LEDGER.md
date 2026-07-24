@@ -79,6 +79,20 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 > per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
 > running count.
 
+### Cycle 8 — audit-fix loop 3/3 (Fable lead + 3 auditors: completeness / fresh-clone-repro / doc-honesty) ✅ DONE
+- Completeness critic: submission **complete & defensible, no fatal/missing deliverable** (all p13 artifacts,
+  7 capabilities, 241 tests, live target up, fresh-clone reproducible). Surfaced the valued NEGATIVE result
+  in `reports/` (new `reports/DEFENSES_HELD.md`): the 4 LLM-plane categories (injection/state/tool/identity)
+  held with **zero exploits** live; every committed finding is infra-level. Added honest as-built caveats
+  inline in ARCHITECTURE §6 (default sweep runs all seeds; scorer uses a 4-signal subset) and §7 (regression
+  replay is invoked, not auto-fired on a version delta).
+- Fresh-clone repro: verified clean on the uv path (bootstrap, byte-for-byte reports, 30 seeds/OWASP,
+  regress fail-closed exit 1, deployed link 200). Fixed the pip fallback to probe for Python 3.11+ and fail
+  loudly (was silently grabbing an old python3); clarified the `trace` no-spans message; `status` always
+  shows the cost-scaling-rate line now (n/a keyless).
+- Doc-honesty sweep: docs accurate except AS_BUILT "ten→eleven invariant rules" (+HSTS in the enumeration,
+  widened cite). Full suite 241, ruff clean, bootstrap syntax OK.
+
 ### Cycle 7 — audit-fix loop 2/3 (Fable lead + 3 auditors: platform-security / robustness / testing-the-tester) ✅ DONE
 - Testing-the-tester (highest value): the κ drift gate covered only 7/12 invariants and was **blind to
   injection drift** (sabotaging `_judge_injection` kept κ=1.0). Expanded the gold set to all **11 rule-backed
