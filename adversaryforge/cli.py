@@ -41,6 +41,12 @@ def campaign(
     console.print(f"\n[bold green]Campaign {result.run_id}[/bold green] "
                   f"vs {result.target_version} "
                   f"({'authenticated' if result.authenticated else 'unauthenticated'})")
+    if result.authenticated and result.session_verified is True:
+        console.print("  [green]✓ session verified — target /v1/auth/status reports authenticated[/green]")
+    elif result.authenticated and result.session_verified is False:
+        console.print("  [red]⚠ cookie present but the target reports NOT authenticated — the "
+                      "authenticated seeds are hitting the 401 auth boundary, not the authenticated "
+                      "surface. Refresh AGENTFORGE_SESSION_COOKIE / check ADVERSARYFORGE_SESSION_COOKIE_NAME.[/red]")
     console.print(f"  directive: [dim]{result.directive_rationale}[/dim]")
     if result.calibration_kappa is not None:
         _k = "[green]" if result.calibration_passed else "[red]"

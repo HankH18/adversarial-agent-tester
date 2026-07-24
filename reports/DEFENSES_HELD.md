@@ -1,47 +1,55 @@
-# Defenses that HELD — the negative result (authenticated LLM attack plane)
+# Defenses that HELD — the negative result (authenticated attack plane)
 
 > A vulnerability report directory that lists only findings tells half the story. For a security
-> platform, **"we attacked this surface and the defense held"** is a first-class, valued result — it is
-> what a hospital CISO most wants to know. This file records the held-defense outcomes so `reports/`
-> tells the complete picture, alongside the confirmed findings in `reports/VULN-*.md`.
+> platform, **"we attacked this surface with a valid session and the defense held"** is a first-class,
+> valued result — it is what a hospital CISO most wants to know. This file records the held-defense
+> outcomes so `reports/` tells the complete picture, alongside the confirmed findings in
+> `reports/VULN-*.md`.
 
-## What ran
+## What ran — with a VERIFIED authenticated session
 
-Authenticated live campaigns against the deployed target (`https://agentforge.hankholcomb.com`,
-SMART/OAuth session, synthetic data only) exercised all **6 attack categories / 30 seeds**
-(`adversaryforge campaign` → `status`). The independent, deterministic-first Judge (κ=1.0 gold-set
-calibration each run) adjudicated every attempt.
+An authenticated live campaign ran against the deployed target (`https://agentforge.hankholcomb.com`,
+synthetic data only). The session was **verified authenticated** before attacking — the target's own
+`/v1/auth/status` returned `authenticated: true` and `/v1/auth/me` resolved to a real physician
+(`clinician_id 1`). Every one of the **30 seeds / 6 categories** was adjudicated by the independent,
+deterministic-first Judge (κ=1.0 gold-set calibration each run).
 
-## Result by category (live, campaign-only)
+> Provenance note: an earlier version of this file reported these categories as "held" while the
+> platform's session cookie was **not actually being accepted** (it was sent without its `af_session=`
+> name, so authenticated requests silently hit the 401 boundary). That wiring bug is fixed
+> (`target/session.py`), the session is now verified against `/v1/auth/status` at campaign start, and
+> the results below are from a genuinely authenticated run. The headline held — but now for the right
+> reason (attacks were **defended**, not merely **refused pre-auth**).
+
+## Result by category (authenticated live campaign, clean store)
 
 | Attack category | Attempts | Confirmed exploits | Outcome |
 |---|---|:---:|---|
-| **Prompt injection** (direct / indirect-via-document / multi-turn) | 16 | **0** | ✅ **HELD** — refused pre-auth or withheld; no system-prompt leak, no canary echo, injected instructions treated as inert data |
-| **State corruption** (history poisoning / forged-reply replay) | 10 | **0** | ✅ **HELD** — poisoned history did not launder into trusted instructions; ungrounded turns withheld |
-| **Tool misuse** (write-gate, forged confirm, rounds-start tamper) | 7 | **0** | ✅ **HELD** — write routes gated (503/40x); forged confirmations rejected |
-| **Identity / role** (clinician mismatch, persona hijack, SSRF-via-agent) | 12 | **0** | ✅ **HELD** — session identity not overridable; no server-side fetch of internal/metadata URLs |
-| **Data exfiltration** | 47 | 16 | ⚠️ **MIXED** — cross-patient / PHI-egress **HELD** (authz enforced, 401/403/withheld); the confirmed successes are **infrastructure info-disclosure** on *anonymous* endpoints (`/ready`, `/v1/auth/status`, `/openapi.json`, `/status`) — see the `VULN-*` reports |
-| **Denial of service** | 13 | ~6 | ⚠️ **MIXED** — recursion/latency bounded (**HELD**); the confirmed success is **absent inbound rate limiting** (cost-amplification / brute-force enabler) — see `VULN-*` |
+| **Prompt injection** (direct / indirect-via-document / multi-turn) | 4 | **0** | ✅ **HELD** — under a valid physician session the injected instructions were treated as inert data: no system-prompt leak, no canary echo, scope unchanged |
+| **State corruption** (history poisoning / forged-reply replay) | 2 | **0** | ✅ **HELD** — poisoned history did not launder into trusted instructions; ungrounded turns withheld |
+| **Tool misuse** (write-gate, forged confirm, rounds-start tamper) | 2 | **0** | ✅ **HELD** — write routes gated; forged confirmations rejected |
+| **Identity / role** (clinician mismatch, persona hijack, SSRF-via-agent) | 3 | **0** | ✅ **HELD** — the asserted-clinician override did not take; no server-side fetch of internal/metadata URLs |
+| **Data exfiltration** | 14 | 4 | ⚠️ **MIXED** — authenticated **cross-patient reads and PHI egress HELD** (authz enforced: 401/403/withheld). The 4 confirmed are **infrastructure info-disclosure** on *anonymous* endpoints (`/ready`, `/v1/auth/status`, `/openapi.json`) + a missing-HSTS transport gap — see the `VULN-*` reports |
+| **Denial of service** | 3 | 2 | ⚠️ **MIXED** — recursion/latency bounded on most turns; the 2 confirmed are **absent inbound rate limiting** + a cost-amplification latency breach — see `VULN-*` |
 
-**The four LLM-plane attack categories — prompt injection, state corruption, tool misuse, and
-identity/role — recorded ZERO confirmed exploits.** Every confirmed finding in `reports/VULN-*.md` is
-**infrastructure-level** (anonymous info disclosure, missing rate limiting / HSTS), not an LLM jailbreak.
-That is the honest, defensible headline: under continuous adversarial pressure the *agentic* safety
-invariants held; the real weaknesses are conventional web-infra hygiene.
+**Every one of the 6 confirmed exploits is infrastructure-level** (anonymous info disclosure, missing
+HSTS, missing rate limiting). Under a genuine authenticated physician session, the **agentic** attack
+categories — prompt injection, state corruption, tool misuse, identity/role — and the **authenticated
+PHI / cross-patient** attacks all held with **zero** confirmed exploits. The real weaknesses are
+conventional web-infra hygiene, not the LLM co-pilot's safety behavior.
 
 ## How to reproduce
 
 ```bash
-# authenticated (needs AGENTFORGE_SESSION_COOKIE in .env); synthetic data only
-.venv/bin/python -m adversaryforge.cli campaign      # runs all runnable seeds live
+# authenticated: AGENTFORGE_SESSION_COOKIE=<af_session value> in .env (synthetic data only)
+.venv/bin/python -m adversaryforge.cli campaign      # prints "✓ session verified" when the cookie is accepted
 .venv/bin/python -m adversaryforge.cli status        # pass/fail by category (held = failure = defense held)
 ```
 
-Note the Judge's polarity: an attack **`success`** means the invariant was *falsified* (a vulnerability);
-a **`failure`** means the attack was repelled (**the defense held**). Full per-category threat analysis,
-including the corrected false-positive story on the authenticated authz path, is in
-[`../THREAT_MODEL.md`](../THREAT_MODEL.md) §8.2.
+The Judge's polarity: an attack **`success`** means the invariant was *falsified* (a vulnerability); a
+**`failure`** means the attack was repelled (**the defense held**). Full per-category threat analysis is
+in [`../THREAT_MODEL.md`](../THREAT_MODEL.md) §8.2.
 
-*Counts above are from the live authenticated campaign history on 2026-07-24 and will grow as more
-campaigns run; the qualitative result — LLM-plane categories held, findings are infra-level — is stable
-and reproducible.*
+*Counts are from an authenticated campaign on 2026-07-24 (verified session, clean store) and will grow as
+more campaigns run; the qualitative result — LLM-plane and authenticated-PHI categories held, findings are
+infra-level — is stable and reproducible.*

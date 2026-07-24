@@ -43,6 +43,10 @@ class CampaignResult:
     halted_no_signal: bool = False
     calibration_kappa: float | None = None
     calibration_passed: bool = True
+    # None = not checked (unauthenticated run); True/False = the target's /v1/auth/status verdict
+    # when a cookie IS configured. False here means "cookie present but NOT accepted" — attacks
+    # would hit the auth boundary, the exact trap that read as 'authenticated' but 401'd every seed.
+    session_verified: bool | None = None
 
 
 def should_halt_no_signal(spent_usd: float, budget_usd: float, confirmed: int) -> bool:
@@ -69,6 +73,20 @@ async def _target_version(client: TargetClient) -> str:
     if isinstance(j, dict) and j.get("version"):
         return str(j["version"])
     return "unknown"
+
+
+async def _verify_session(client: TargetClient) -> bool | None:
+    """Ask the target whether the configured session is ACTUALLY authenticated (AgentForge
+    exposes `/v1/auth/status` → {authenticated: bool}). Returns True/False, or None if the
+    probe itself failed — never raises, so a missing endpoint just yields 'unknown'."""
+    try:
+        resp = await client.request("GET", "/v1/auth/status")
+        body = resp.json
+        if isinstance(body, dict) and "authenticated" in body:
+            return bool(body["authenticated"])
+    except Exception:
+        return None
+    return None
 
 
 def build_llm_adjudicator(settings: Settings):
@@ -109,6 +127,23 @@ async def run_campaign(
         run_id = store.start_run(settings.target_base_url, version, mode, authed,
                                  notes=f"seeds={len(library.seeds)}")
 
+        # ── Session verification ─────────────────────────────────────────────
+        # A configured cookie only means the run is LABELLED authenticated; only the target
+        # can confirm the session is valid. Probe /v1/auth/status and record the truth, so a
+        # present-but-rejected cookie (attacks silently hitting the 401 auth boundary) is
+        # visible rather than mislabelled "authenticated".
+        session_verified: bool | None = None
+        if authed:
+            session_verified = await _verify_session(client)
+            store.log_event(run_id, "orchestrator", "auth_check",
+                            f"cookie present; target /v1/auth/status authenticated={session_verified}")
+            if session_verified is False:
+                store.log_event(run_id, "orchestrator", "auth_warning",
+                                "cookie present but the target reports authenticated=FALSE — "
+                                "authenticated seeds will hit the 401 auth boundary, not the "
+                                "authenticated surface. Refresh AGENTFORGE_SESSION_COOKIE and check "
+                                "ADVERSARYFORGE_SESSION_COOKIE_NAME.")
+
         # ── Judge drift gate ─────────────────────────────────────────────────
         # Calibrate the Judge against the frozen gold set BEFORE attacking. If Cohen's
         # kappa falls below the threshold the Judge has drifted and its verdicts can't
@@ -127,7 +162,8 @@ async def run_campaign(
                 run_id=run_id, target_version=version, authenticated=authed, total=0,
                 successes=0, by_outcome={}, exploits_new=0,
                 directive_rationale="halted: Judge failed calibration (drift gate)",
-                calibration_kappa=cal.kappa, calibration_passed=False)
+                calibration_kappa=cal.kappa, calibration_passed=False,
+                session_verified=session_verified)
 
         executor = SeedExecutor(client)
 
@@ -163,6 +199,7 @@ async def run_campaign(
         halted_no_signal=halted,
         calibration_kappa=cal.kappa,
         calibration_passed=True,
+        session_verified=session_verified,
     )
 
 

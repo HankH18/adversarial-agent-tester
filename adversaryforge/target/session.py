@@ -53,18 +53,29 @@ class AnonymousSession(SessionProvider):
 class EnvCookieSession(SessionProvider):
     """A physician session cookie from ``.env`` (``AGENTFORGE_SESSION_COOKIE``).
 
-    Accepts either a bare ``value`` or a full ``name=value; name2=value2`` header.
+    The target parses a NAMED cookie (``af_session`` for AgentForge, configurable via
+    ``ADVERSARYFORGE_SESSION_COOKIE_NAME``). A pasted bare ``value`` is wrapped as
+    ``<name>=<value>``; a value already in ``name=value`` or a full ``a=b; c=d`` header
+    form is sent verbatim.
     """
 
     name = "env-cookie"
 
-    def __init__(self, cookie: str) -> None:
+    def __init__(self, cookie: str, cookie_name: str = "af_session") -> None:
         self._cookie = cookie.strip()
+        self._cookie_name = (cookie_name or "af_session").strip()
 
     def headers(self) -> dict[str, str]:
         if not self._cookie:
             return {}
-        return {"Cookie": self._cookie}
+        c = self._cookie
+        # A bare value must be wrapped as `<name>=<value>` or the target won't parse the
+        # session cookie (the bug behind the "authenticated but every request 401s" trap).
+        if c.startswith(f"{self._cookie_name}=") or ";" in c:
+            header = c
+        else:
+            header = f"{self._cookie_name}={c}"
+        return {"Cookie": header}
 
     @property
     def is_authenticated(self) -> bool:
@@ -101,5 +112,5 @@ class OAuthSession(SessionProvider):
 def build_session(settings: Settings) -> SessionProvider:
     """Choose the strongest available provider for the current config."""
     if settings.has_session:
-        return EnvCookieSession(settings.session_cookie)
+        return EnvCookieSession(settings.session_cookie, settings.session_cookie_name)
     return AnonymousSession()

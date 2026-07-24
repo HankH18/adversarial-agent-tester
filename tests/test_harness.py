@@ -515,9 +515,10 @@ async def test_run_regression_runs_authed_case_with_live_session(tmp_path, monke
     assert result["skipped"] == 0                  # the requires_auth case was NOT skipped
     assert result["cases"][0]["result"] != "skipped"
     assert chat.called                              # it actually replayed against the target
-    # The replay carried the configured session cookie — threaded via TargetClient, so the
-    # authed plane is exercised with the operator's session rather than anonymously.
-    assert chat.calls.last.request.headers.get("cookie") == "valid-physician-cookie"
+    # The replay carried the configured session cookie, wrapped in the target's cookie NAME
+    # (`af_session=<value>`) — a bare value is not parsed by the target, which is the exact
+    # bug that made every "authenticated" request 401. Threaded via TargetClient.
+    assert chat.calls.last.request.headers.get("cookie") == "af_session=valid-physician-cookie"
 
 
 async def test_run_regression_authed_case_via_auth_me_fallback(tmp_path, monkeypatch):

@@ -50,6 +50,11 @@ class Settings(BaseSettings):
         validation_alias="ADVERSARYFORGE_TARGET_BASE_URL",
     )
     session_cookie: str = Field(default="", validation_alias="AGENTFORGE_SESSION_COOKIE")
+    # The target parses a NAMED session cookie (AgentForge uses `af_session`). A bare cookie
+    # value in AGENTFORGE_SESSION_COOKIE is wrapped as `<name>=<value>` so the target accepts it.
+    session_cookie_name: str = Field(
+        default="af_session", validation_alias="ADVERSARYFORGE_SESSION_COOKIE_NAME"
+    )
     # Extra hostnames the client may dispatch to, comma/space-separated. The configured
     # target host and loopback are ALWAYS allowed; this only WIDENS the allowlist (e.g.
     # to point the platform at your own second chatbot). It exists so 'only test what
