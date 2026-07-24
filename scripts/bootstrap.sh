@@ -39,8 +39,10 @@ run_cli() {
   fi
 }
 
-echo "==> offline smoke: seed-demo (populate illustrative findings)"
-run_cli seed-demo
+echo "==> offline smoke: seed-published (load the real committed findings)"
+run_cli seed-published
+echo "==> offline smoke: report (regenerate reports/VULN-*.md byte-for-byte from the ledger)"
+run_cli report
 echo "==> offline smoke: status (render the observability snapshot)"
 run_cli status
 

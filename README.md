@@ -66,12 +66,12 @@ uv pip install -e '.[dev]'
 # 2. Configure (both secrets are OPTIONAL — the platform runs without them)
 cp .env.example .env      # then edit — see "Authentication & keys" below
 
-# 3. START HERE (fully offline, no target, no secrets): populate illustrative findings,
-#    then render them. The SQLite store is git-ignored and starts EMPTY, so status/report
-#    show nothing until something has populated it — seed-demo is the zero-network way in.
-.venv/bin/python -m adversaryforge.cli seed-demo  # populate illustrative findings (offline)
-.venv/bin/python -m adversaryforge.cli status     # observability snapshot the Orchestrator reads
-.venv/bin/python -m adversaryforge.cli report     # (re)generate reports/*.md
+# 3. START HERE (fully offline, no target, no secrets). The SQLite store is git-ignored and
+#    starts EMPTY, so status/report show nothing until something populates it:
+.venv/bin/python -m adversaryforge.cli seed-published  # load the REAL committed findings; report regenerates VULN-*.md byte-for-byte
+.venv/bin/python -m adversaryforge.cli seed-demo       # OR: quick illustrative findings (mode='demo', excluded from reports)
+.venv/bin/python -m adversaryforge.cli status          # observability snapshot the Orchestrator reads
+.venv/bin/python -m adversaryforge.cli report          # (re)generate reports/*.md from the loaded findings
 
 # 4. LIVE (needs the authorized target; the authenticated plane also needs a session cookie)
 .venv/bin/python -m adversaryforge.cli campaign   # attack the live target
@@ -89,6 +89,7 @@ after a clean install — see the note above).
 | `campaign` | Orchestrator selects → Red Team executes → Judge evaluates → exploits stored |
 | `status` | Coverage per category, pass/fail rates, resilience trend, open findings, cost |
 | `seeds` | List the seed library with test-design roles (boundary/invariant/regression) |
+| `seed-published` | Load the committed findings ledger (real exploits behind `reports/`) so a fresh clone regenerates the reports + runs status/regress. See [`docs/REMEDIATION.md`](docs/REMEDIATION.md) |
 | `regress` | Re-run confirmed exploits; exits non-zero unless the fail-closed gate is GREEN. **On the shipped/demo data this is correctly RED** — the live target is still rate-limit-vulnerable, so the gate refuses to go green until the target is fixed. That is the harness working, not a platform failure. |
 | `report` | (Re)generate professional vulnerability reports |
 | `trace [run_id]` | Render the fine-grained per-agent execution trace (span tree) for a run |

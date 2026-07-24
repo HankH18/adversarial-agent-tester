@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from adversaryforge.agents.calibration import calibrate_judge
 from adversaryforge.agents.judge import Judge
@@ -22,6 +23,10 @@ from adversaryforge.redteam.seeds import Seed, SeedLibrary
 from adversaryforge.target.adapter import agentforge_adapter
 from adversaryforge.target.client import TargetClient
 from adversaryforge.target.session import build_session
+
+# The committed published-findings ledger — the real exploits behind reports/VULN-*.md,
+# and the machine-readable remediation contract for a future target-fixing agent.
+_LEDGER = Path(__file__).resolve().parent.parent / "evals" / "published_findings.yaml"
 
 
 @dataclass
@@ -331,6 +336,57 @@ def seed_demo(*, settings: Settings | None = None) -> dict:
                 request={"seed_id": seed.id, "steps": [s.model_dump() for s in seed.steps]},
                 assertion={"kind": "invariant_holds", "invariant": seed.target_invariant},
                 severity=sev))
+    store.end_run(run_id, 0.0)
+    return {"run_id": run_id, "findings": written}
+
+
+def seed_published(*, settings: Settings | None = None) -> dict:
+    """Load the committed published-findings ledger (`evals/published_findings.yaml`) into
+    the store as the REAL confirmed findings behind `reports/VULN-*.md`, under a
+    `mode='published'` run. Unlike `seed-demo` (illustrative, `mode='demo'`, excluded from
+    reports), these are the actual exploits — so a FRESH CLONE can regenerate the vuln
+    reports byte-for-byte and run status/regress WITHOUT a live campaign or the git-ignored
+    SQLite DB. Idempotent (`record_exploit` dedupes)."""
+    import yaml
+
+    from adversaryforge.contracts import (
+        AttackAttempt,
+        ConfirmedExploit,
+        RegressionCandidate,
+        Verdict,
+    )
+
+    settings = settings or get_settings()
+    store = Store(settings.db_path)
+    ledger = yaml.safe_load(_LEDGER.read_text(encoding="utf-8")) or {}
+    findings = ledger.get("findings", [])
+    run_id = store.start_run(settings.target_base_url, "published", "published", False,
+                             notes="seed-published: committed real findings (provenance + reports)")
+    written = 0
+    for fnd in findings:
+        exploit = ConfirmedExploit.model_validate(fnd["exploit"])
+        # Reconstruct the attempt + verdict so status/regress see the finding too.
+        attempt = AttackAttempt(
+            attempt_id=exploit.attempt_id, directive_id="published", seed_id=fnd.get("seed_id"),
+            category=exploit.category, subcategory=exploit.subcategory,
+            target_invariant=exploit.target_invariant, expected_safe=exploit.expected_safe,
+            owasp_web=exploit.owasp_web, owasp_llm=exploit.owasp_llm,
+            transcript=exploit.minimal_transcript)
+        verdict = Verdict(
+            verdict_id=exploit.verdict_id, attempt_id=exploit.attempt_id, outcome=Outcome.success,
+            severity=exploit.severity, confidence=0.9, method="deterministic",
+            rationale=exploit.observed, invariant_violated=exploit.target_invariant,
+            is_regression_candidate=True)
+        store.record_attempt(run_id, attempt)
+        store.record_verdict(run_id, verdict)
+        if store.record_exploit(exploit):
+            written += 1
+            store.record_regression_case(RegressionCandidate(
+                case_id=f"rc_pub_{exploit.exploit_id}", exploit_id=exploit.exploit_id,
+                category=exploit.category,
+                request={"seed_id": fnd.get("seed_id"), "steps": fnd.get("steps", [])},
+                assertion={"kind": "invariant_holds", "invariant": exploit.target_invariant},
+                severity=exploit.severity))
     store.end_run(run_id, 0.0)
     return {"run_id": run_id, "findings": written}
 

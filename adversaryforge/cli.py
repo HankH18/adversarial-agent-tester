@@ -91,6 +91,20 @@ def seed_demo_cmd():
                   "[bold]report[/bold] · [bold]trace[/bold]")
 
 
+@app.command(name="seed-published")
+def seed_published_cmd():
+    """Load the committed published-findings ledger (the REAL exploits behind
+    reports/VULN-*.md) into the store, so a FRESH CLONE can regenerate the reports and run
+    status/regress without a live campaign. Idempotent; mode='published'."""
+    from adversaryforge.platform import seed_published
+
+    res = seed_published(settings=get_settings())
+    console.print(f"[bold green]Loaded {res['findings']} published finding(s)[/bold green] "
+                  f"[dim](run {res['run_id']})[/dim].")
+    console.print("  Now run: [bold]report[/bold] to (re)generate reports/*.md · "
+                  "[bold]status[/bold] · [bold]regress[/bold]")
+
+
 @app.command()
 def status():
     """Print the observability snapshot the Orchestrator reads."""

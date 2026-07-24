@@ -281,6 +281,53 @@ def test_seed_demo_populates_a_fresh_store_and_is_excluded_from_selection(tmp_pa
     assert len(Store(st.db_path).list_exploits()) == res["findings"]
 
 
+def test_seed_published_loads_the_ledger_and_regenerates_reports(tmp_path, monkeypatch):
+    # The committed ledger (evals/published_findings.yaml) is the provenance behind
+    # reports/VULN-*.md: seed-published loads the REAL exploits into a fresh store so report
+    # regenerates them and status/regress work — no live campaign or git-ignored DB needed.
+    import yaml
+
+    from adversaryforge.agents.documentation import generate_all_reports
+    from adversaryforge.platform import _LEDGER
+
+    n_ledger = len(yaml.safe_load(_LEDGER.read_text(encoding="utf-8"))["findings"])
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    res = plat.seed_published(settings=st)
+    assert res["findings"] == n_ledger                       # every ledger finding loaded
+    store = Store(st.db_path)
+    assert len(store.list_exploits()) == n_ledger
+    assert store.get_run(res["run_id"])["mode"] == "published"
+    assert len(store.list_regression_cases()) == n_ledger    # regress can replay them
+    # published findings ARE reportable (unlike demo) — reports regenerate into the data dir
+    assert generate_all_reports(settings=st) == n_ledger
+    assert len(list((tmp_path / "reports").glob("VULN-*.md"))) == n_ledger
+    # idempotent: a second load dedupes
+    plat.seed_published(settings=st)
+    assert len(Store(st.db_path).list_exploits()) == n_ledger
+
+
+def test_committed_reports_regenerate_from_the_ledger_byte_for_byte(tmp_path, monkeypatch):
+    # Provenance guard: reports/VULN-*.md must be EXACTLY what seed-published + report produce
+    # from the committed ledger, so the deliverable is verifiable from data and ledger↔report
+    # drift is caught (regenerate + commit the reports when the ledger or generator changes).
+    from pathlib import Path
+
+    from adversaryforge.agents.documentation import generate_all_reports
+
+    st = _settings(tmp_path, monkeypatch, budget="0")
+    plat.seed_published(settings=st)
+    generate_all_reports(settings=st)
+    repo_reports = Path(__file__).resolve().parent.parent / "reports"
+    gen_reports = tmp_path / "reports"
+    gen = sorted(p.name for p in gen_reports.glob("VULN-*.md"))
+    committed = sorted(p.name for p in repo_reports.glob("VULN-*.md"))
+    assert gen == committed, f"report set differs: ledger regen {gen} vs committed {committed}"
+    for name in gen:
+        assert (gen_reports / name).read_text(encoding="utf-8") == \
+            (repo_reports / name).read_text(encoding="utf-8"), \
+            f"{name} regenerated from the ledger differs from the committed reports/{name}"
+
+
 def test_report_preserves_committed_reports_when_db_holds_only_demo(tmp_path, monkeypatch):
     # The documented `seed-demo` → `report` flow (and the CI smoke) must NEVER delete a
     # committed vuln report: demo findings are excluded from report generation, so a
