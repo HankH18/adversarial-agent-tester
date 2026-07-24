@@ -159,15 +159,21 @@ class Orchestrator:
                    trigger="partial") as msp:
             self._store.log_event(run_id, "redteam", "mutate",
                                   f"{seed.id}: partial → generating {n} variants")
+            # cost_usd AND token counters are cumulative on the mutator, so snapshot
+            # all three before the call and log only THIS mutation's delta — mirroring
+            # how _meter_judge_llm meters the Judge adjudicator's real usage.
             before_cost = getattr(mutator, "cost_usd", 0.0) or 0.0
+            before_in = getattr(mutator, "tokens_in", 0) or 0
+            before_out = getattr(mutator, "tokens_out", 0) or 0
             variants = await mutator.mutate(base_messages, seed.target_invariant,
                                             verdict.rationale, n=n)
             msp.set("variants_generated", len(variants))
-            # Log only THIS mutation's spend (cost_usd is cumulative on the mutator).
             delta = (getattr(mutator, "cost_usd", 0.0) or 0.0) - before_cost
             if delta > 1e-9:
+                d_in = (getattr(mutator, "tokens_in", 0) or 0) - before_in
+                d_out = (getattr(mutator, "tokens_out", 0) or 0) - before_out
                 self._store.log_cost(run_id, "redteam", getattr(mutator, "_model", "redteam"),
-                                     0, 0, delta)
+                                     d_in, d_out, delta)
             breakthroughs = 0
             for i, variant in enumerate(variants):
                 with trace("redteam.variant", "redteam", index=i, generation=1) as vsp:

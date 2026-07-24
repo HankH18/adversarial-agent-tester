@@ -63,7 +63,7 @@ class Mutator:
             self._client = None
             self._model = settings.redteam_model
             self._provider = "none"
-        self.cost_usd = 0.0
+        self.cost_usd, self.tokens_in, self.tokens_out = 0.0, 0, 0  # cost + cumulative tokens (mirrors judge meter) for per-agent ledger attribution
 
     async def mutate(
         self,
@@ -102,6 +102,8 @@ class Mutator:
             sp.update(input_tokens=_in, output_tokens=_out, usd=round(usd, 6),
                       response_preview=text[:100])
         self.cost_usd += usd
+        self.tokens_in += _in
+        self.tokens_out += _out
 
         variants = _parse_variants(text, n)
         if len(variants) < n:

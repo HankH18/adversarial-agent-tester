@@ -230,6 +230,11 @@ class SeedExecutor:
             raw = dict(j)
         raw["_latency_ms"] = resp.latency_ms
         raw["_status"] = resp.status_code
+        # Persist response headers (lower-cased keys) so the Judge can adjudicate
+        # transport-layer crypto posture (HSTS/TLS enforcement — OWASP A02) both live
+        # and on replay. Captured verbatim by the client but otherwise dropped.
+        if resp.response_headers:
+            raw["_response_headers"] = {k.lower(): v for k, v in resp.response_headers.items()}
         content = ""
         if isinstance(j, dict) and "answer" in j:
             content = str(j.get("answer") or "")

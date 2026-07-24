@@ -109,6 +109,23 @@ class Seed(BaseModel):
         "session is configured (but staged to auto-run once a cookie lands).",
     )
     severity_hint: str = "medium"
+    exploitability: str = Field(
+        default="",
+        description="Ease of carrying out the attack (trivial|easy|moderate|difficult) — "
+        "the Stage-3 'exploitability assessment', kept DISTINCT from severity (impact). "
+        "Left blank in YAML it is derived at load from the attack's preconditions "
+        "(auth required? single vs. multi-step) via `_derive_exploitability`, so every "
+        "seed carries a reproducible assessment; set it explicitly to override.",
+    )
+
+    @model_validator(mode="after")
+    def _fill_exploitability(self) -> "Seed":
+        # Derive a reproducible exploitability rating when the seed doesn't state one,
+        # so the eval dataset satisfies 'severity rating AND exploitability assessment'
+        # for every case without hand-labelling. Explicit YAML values win.
+        if not self.exploitability:
+            self.exploitability = _derive_exploitability(self.requires_auth, len(self.steps))
+        return self
 
 
 class SeedLibrary(BaseModel):
@@ -152,6 +169,17 @@ class SeedLibrary(BaseModel):
             if (authenticated or not s.requires_auth)
             and (allow_write_probe or not s.is_write_probe)
         ]
+
+
+def _derive_exploitability(requires_auth: bool, n_steps: int) -> str:
+    """Reproducible exploitability rubric (ease of exploitation, NOT impact):
+      - reachable anonymously (no session): a single request → 'trivial', else 'easy';
+      - requires a valid physician session: single request → 'moderate', multi-step or
+        upload-then-recall sequences → 'difficult' (harder to land reliably).
+    Documented in evals/OWASP_COVERAGE.md so a reviewer can reproduce the label."""
+    if not requires_auth:
+        return "trivial" if n_steps <= 1 else "easy"
+    return "moderate" if n_steps <= 1 else "difficult"
 
 
 def _enum(v: Any) -> str:

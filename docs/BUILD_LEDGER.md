@@ -31,7 +31,7 @@
 |---|------|--------|-------|
 | G1 | Deployed target live + submitted URL | Stage 1 / hard gate | ✅ live |
 | G2 | `THREAT_MODEL.md` — full surface + ~500-word summary | Stage 2 / hard gate | ✅ built (543-word summary, 6 cats, OWASP) |
-| G3 | `evals/` — reproducible cases across ≥3 attack categories | Stage 3 / hard gate | ✅ 27 seeds, 6 cats (9 unauth + 18 auth; incl. 4 OWASP-gap seeds: A06/A09/A10/LLM03) |
+| G3 | `evals/` — reproducible cases across ≥3 attack categories | Stage 3 / hard gate | ✅ 30 seeds, 6 cats (10 unauth + 20 auth); full OWASP Top-10:2021 + LLM Top-10:2025 mapped (see `evals/OWASP_COVERAGE.md`) incl. completion seeds A02/LLM07/LLM08/LLM09 |
 | G4 | ≥1 agent role running LIVE against deploy | Stage 3 / hard gate | ✅ full spine ran live |
 | G5 | `ARCHITECTURE.md` — multi-agent, ~500-word summary, diagram | Stage 4 / hard gate | ✅ exists |
 | G6 | `USERS.md` | Submission | ✅ 4 personas + why-automation |
@@ -75,9 +75,28 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 
 ## Cycle log
 
-> **Suite: 190+ tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
+> **Suite: 236 tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
 > per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
 > running count.
+
+### Cycle 5 — final gap-audit + fix swarm (Fable lead + 6 build agents + adversarial verify) ✅ DONE
+- Full spec-conformance audit (6 read-only verifiers) against the extracted PDF, then a disjoint-path
+  build swarm. **OWASP coverage completed to 10/10 web (2021) + 10/10 LLM (2025)** — new seeds
+  `crypto-hsts-missing` (A02, new `INV-TRANSPORT-SECURITY` Judge rule + HSTS check, response-headers now
+  persisted to the transcript), `llm08-vector-cross-context-recall` (LLM08), `llm09-misinformation-…`
+  (LLM09); `pi-direct-system-prompt-reveal` dual-tagged LLM07; `OwaspLlm` enum + schemas re-exported
+  (CHANGELOG amended). Reviewer map at **`evals/OWASP_COVERAGE.md`**. Every seed now carries an
+  `exploitability` rating (Stage-3 gap closed).
+- Fixes (each reproduced → fixed → sabotage-proved): DoS vuln reports no longer redact their own latency
+  (`documentation.py` category-scoped normalization → real digits `9321ms > 8000ms`); **real DB schema
+  migration** (v3→v4 ALTER+backfill, `store.py`) replacing the no-op; **cross-VERSION** regression flag
+  (was a live no-op) + regression auth-threading + real replay-scan SLO (`regression.py`); genuine
+  two-sided producer→consumer contract test (`tests/test_contract_integration.py`); burn-rate query
+  `cost_rate()`; redteam token cost metering; perf baseline records LLM-call latency + full regression.
+- **ATO §6 self-scan run for real**: `pip-audit` clean, `bandit` 4 Low/0 Med/0 High (all accepted).
+- Verified LIVE post-change: `campaign` (run_8e11ba3b4c77, authenticated, κ=1.0), the new A02 transport
+  case fires live (INV-TRANSPORT-SECURITY → success), `regress` fail-closed, cost/observability populate. Full suite
+  **236 passed**. Peer-integration exercise confirmed OPTIONAL (operator) → out of scope.
 
 ### Cycle 4 — fine-grained execution tracing (lead) ✅ DONE
 - Built a contextvar-linked span tracer (`observability/tracing.py`) + a `spans` table (schema v3,

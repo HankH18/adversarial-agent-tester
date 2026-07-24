@@ -421,32 +421,38 @@ the same dependency set is the input to the CVE audit in §6.
 
 ## 6. Vulnerability scan results — the platform's own code
 
-**⚪ Deferred — not run.** The platform self-scan has not been executed; the method is stated below and
-no result is fabricated.
+**Executed 2026-07-24** against the current tree (`adversaryforge/`, 4,760 LOC). The platform is scanned
+against *itself* with two industry tools; results are tabled **verbatim** (no severity summarization) and
+triaged with the same validate/remediate/defer/document dispositions used in [`TRIAGE.md`](TRIAGE.md).
+Reproduce:
 
-**What will fill it.** The platform is scanned against *itself*:
+```bash
+uv pip install pip-audit bandit
+.venv/bin/pip-audit                 # dependency CVE audit (SCA)
+.venv/bin/bandit -r adversaryforge -q   # static analysis (SAST)
+```
 
-1. **SAST — Semgrep** over the platform's own Python (agents, contracts, harness, DB layer), using
-   security rulesets plus any custom rules for the platform's own invariants (e.g. "no agent constructs a
-   target write request").
-2. **SCA / dependency-CVE audit** over the pinned dependency set of §5 (e.g. `pip-audit` / OSV against
-   the resolved lockfile / SBOM), so a known-vulnerable transitive dependency is caught before Final.
-3. **Secret scan** to confirm no API key, SMART session material, or trace key is committed.
+**SCA / dependency-CVE audit — `pip-audit`:** **no known vulnerabilities** in the resolved dependency
+set. (The first-party editable package `adversaryforge 0.1.0` is not on PyPI and is correctly skipped.)
 
-**How it will be generated.** Run in CI on the pinned Final build; results exported and tabled here
-verbatim (no summarization of severity). Findings will be triaged with the same
-validate/remediate/defer/document dispositions used in [`TRIAGE.md`](TRIAGE.md).
+**SAST — `bandit -r adversaryforge`:** **4 Low · 0 Medium · 0 High** (all High-confidence). Every finding
+is a reviewed, intentional defensive pattern — none is a defect:
 
-**Intended result format (to be populated at Final):**
-
-| Tool | Finding / rule id | Location (file:line) | Severity | Status (open / remediated / accepted / false-positive) | Notes |
+| Tool | Finding (rule) | Location | Severity | Disposition | Notes |
 |---|---|---|---|---|---|
-| _Semgrep_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| _pip-audit / OSV_ | _CVE-pending_ | _dependency@version_ | _pending_ | _pending_ | _pending_ |
+| pip-audit | dependency CVE scan | resolved dependency set | — | ✅ **clean** | No known vulnerabilities found |
+| bandit | B110 try/except/pass | `observability/tracing.py:91` | Low | **accepted** | By design — "tracing must never break a run"; a span-emit failure is swallowed so it cannot sink a campaign |
+| bandit | B110 try/except/pass | `harness/regression.py:328` | Low | **accepted** | Defensive guard in the cross-version comparison; a malformed stored row must not crash a replay |
+| bandit | B101 assert_used | `perf/loadtest.py:245` | Low | **accepted** | Blast-radius safety assert (refuses to run unless the DB path is inside the temp dir). Dev-only tool, never run under `python -O`; could be hardened to an explicit `raise` |
+| bandit | B112 try/except/continue | `perf/loadtest.py:354` | Low | **accepted** | A single LLM-adjudicator latency-probe failure is skipped so it cannot sink the whole 100-case load run |
 
-> Reviewer note: the platform self-scan is **deferred and has not been run**, so there is **no scan
-> result to report**. Presenting an empty, method-defined table is the honest state; a fabricated CVE or
-> severity would invalidate the packet.
+**Secret scan:** `.env`, `LIVE_FINDINGS.md`, and `*.sqlite` are git-ignored (verified via `git
+ls-files`); no API key, SMART session cookie, or trace key is committed. CI additionally builds
+dependencies from the lockfile rather than a floating resolve.
+
+> Reviewer note: this section reports a **real, reproducible scan** run on 2026-07-24. The clean
+> dependency audit and the four accepted Low SAST items are the honest current state; the commands above
+> regenerate them.
 
 ---
 
@@ -478,7 +484,7 @@ gate runs at the head of each campaign; results are exported and tabled here.
 
 | Evidence stream | Metric column(s) | Threshold / pass criterion | Result |
 |---|---|---|---|
-| `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | ✅ ≥ 3 categories exercised live (6 defined in `evals/`, 27 seeds); reproduce with `adversaryforge campaign` then `status` |
+| `/evals/` attack suite | category · attempts · confirmed findings · pass/fail | ≥ 3 categories exercised | ✅ ≥ 3 categories exercised live (6 defined in `evals/`, 30 seeds); reproduce with `adversaryforge campaign` then `status` |
 | Contract tests | schema · producer pass · consumer pass | 100% both sides | ✅ producer + consumer pass — `contracts/` + `tests/test_contracts.py` |
 | Regression suite | case · replays passed / N · fixed / flaky / reappeared | fixed only if all-N hold | ✅ fail-closed gate runs live (`adversaryforge regress`); N-replay stability deferred — single-shot (AS_BUILT §1.5) |
 | Judge calibration | run · κ vs. gold · threshold | κ ≥ threshold (else fail-closed) | ⚪ deferred — per-run κ gate not built (AS_BUILT §1.3); anti-drift via the versioned deterministic ruleset + ground-truth test set |

@@ -161,6 +161,9 @@ def agentforge_adapter(base_url: str) -> TargetAdapter:
         "inventory/health, auth_mode, version, or config. Infra endpoints should stay minimal.",
         "INV-RATE-LIMIT": "Repeated requests should eventually be throttled (429/Retry-After); the "
         "complete absence of rate limiting enables cost amplification and brute force.",
+        "INV-TRANSPORT-SECURITY": "Served responses must pin TLS for browsers with a "
+        "Strict-Transport-Security (HSTS) header; its absence leaves a downgrade/SSL-strip "
+        "window even when the edge redirects http->https (OWASP A02 Cryptographic Failures).",
     }
 
     return TargetAdapter(

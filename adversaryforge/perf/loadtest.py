@@ -21,6 +21,23 @@ For each attack it measures, in isolation, the four phases of the real pipeline:
   4. **storage**    — ``record_attempt`` + ``record_verdict`` (+ ``record_exploit``
      on a success), i.e. the exploit-store write path.
 
+Representative run (spec p12: "100 attack cases + full regression suite")
+-------------------------------------------------------------------------
+Beyond the 100 attack executions, the representative run also captures two things
+the earlier keyless-only baseline omitted:
+
+  * **Full regression suite.** Each confirmed success is promoted into a real
+    ``RegressionCandidate`` (mirroring ``Orchestrator._promote``) in the isolated
+    temp DB, and the platform's own ``harness.run_regression`` then replays *every*
+    stored case end-to-end. Its wall time, case count, and pass/fail are recorded so
+    the regression harness's own performance is baselined, not just attack execution.
+  * **LLM-call latency.** When an API key is present, a *bounded* sample
+    (``llm_probe_samples``, default 3) of real Judge LLM-adjudicator calls is timed
+    to record LLM-call latency — the one pipeline phase a keyless run cannot measure.
+    The 100-attack loop itself stays deterministic (no per-attack LLM calls), so a
+    keyless representative run reports this phase with ``n=0`` and the digits are
+    filled from a small keyed sample run separately.
+
 Safety / isolation
 -------------------
 ``ADVERSARYFORGE_DATA_DIR`` is pointed at a fresh ``tempfile.mkdtemp`` directory
@@ -47,9 +64,11 @@ try:  # `resource` is POSIX-only; keep the package import-safe on Windows.
 except ImportError:  # pragma: no cover - non-POSIX
     resource = None
 
-from adversaryforge.agents.judge import Judge
+from adversaryforge.agents.judge import Judge, JudgeView
 from adversaryforge.config import Settings
-from adversaryforge.contracts import ConfirmedExploit, Outcome
+from adversaryforge.contracts import ConfirmedExploit, Outcome, RegressionCandidate
+from adversaryforge.harness.regression import run_regression
+from adversaryforge.llm.judge_llm import make_llm_adjudicator
 from adversaryforge.observability.store import Store
 from adversaryforge.redteam.executor import SeedExecutor
 from adversaryforge.redteam.seeds import Seed, SeedLibrary
@@ -102,6 +121,19 @@ class LoadTestResult:
     judge: Phase
     storage: Phase
     burst_http: Phase  # 12-way concurrent /health burst, aggregate elapsed
+    # LLM-call latency (Judge adjudicator). n=0 on a keyless run — see docstring.
+    llm_call_latency: Phase
+    llm_probe_samples: int
+    llm_probe_enabled: bool
+    # full regression suite (spec p12): replay every promoted case end-to-end
+    regression_ran: bool
+    regression_cases: int
+    regression_seconds: float
+    regression_cases_per_s: float
+    regression_passed: int
+    regression_failed: int
+    regression_skipped: int
+    regression_errored: int
     # storage throughput
     store_write_ops: int
     storage_writes_per_s: float
@@ -186,8 +218,22 @@ def _build_exploit(attempt, verdict, target_version: str) -> ConfirmedExploit:
     )
 
 
+def _build_regression_case(seed: Seed, exploit: ConfirmedExploit, attempt) -> RegressionCandidate:
+    """Mirror Orchestrator._promote's regression-case construction so the perf run
+    seeds a real 'full regression suite' the harness can then replay end-to-end
+    (spec p12: the representative run is 100 attack cases + the full suite)."""
+    return RegressionCandidate(
+        case_id="rc_" + uuid.uuid4().hex[:10],
+        exploit_id=exploit.exploit_id,
+        category=attempt.category,
+        request={"seed_id": seed.id, "steps": [s.model_dump() for s in seed.steps]},
+        assertion={"kind": "invariant_holds", "invariant": attempt.target_invariant},
+        severity=exploit.severity,
+    )
+
+
 # ── the harness ──────────────────────────────────────────────────────────────
-async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
+async def _run(attacks: int, real_db_path: Path, *, llm_probe_samples: int = 3) -> LoadTestResult:
     # Redirect the data dir to a fresh temp dir BEFORE building Settings so the
     # run's SQLite file can never be the real one.
     tmp_dir = Path(tempfile.mkdtemp(prefix="adversaryforge-loadtest-"))
@@ -222,6 +268,8 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
     store_write_ops = 0
     exploits_stored = 0
     total_storage_s = 0.0
+    # A few collected attempts kept for the (optional, bounded) LLM-latency probe.
+    probe_attempts: list = []
 
     tracemalloc.start()
     wall0 = time.perf_counter()
@@ -248,6 +296,8 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
             singles, bursts = _target_latencies(attempt)
             target_single_ms.extend(singles)
             burst_ms.extend(bursts)
+            if len(probe_attempts) < max(0, llm_probe_samples):
+                probe_attempts.append(attempt)
 
             s0 = time.perf_counter()
             store.record_attempt(run_id, attempt)
@@ -265,10 +315,15 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
             out = verdict.outcome.value if hasattr(verdict.outcome, "value") else str(verdict.outcome)
             outcomes[out] = outcomes.get(out, 0) + 1
             if verdict.outcome == Outcome.success:
-                inserted = store.record_exploit(_build_exploit(attempt, verdict, version))
+                exploit = _build_exploit(attempt, verdict, version)
+                inserted = store.record_exploit(exploit)
                 store_write_ops += 1
                 if inserted:
                     exploits_stored += 1
+                    # Promote into the regression suite so the run below can replay the
+                    # FULL suite end-to-end (mirrors Orchestrator._promote's case build).
+                    store.record_regression_case(_build_regression_case(seed, exploit, attempt))
+                    store_write_ops += 1
             s3 = time.perf_counter()
 
             storage_this = (s1 - s0) + (s3 - s2)
@@ -281,6 +336,32 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
     traced_peak = tracemalloc.get_traced_memory()[1]
     tracemalloc.stop()
     store.close()
+
+    # ── LLM-call latency: bounded, key-gated (see docstring) ─────────────────
+    # Timed OUTSIDE the 100-attack loop so the loop stays deterministic and the
+    # keyless representative run never fires per-attack LLM calls. Measures the real
+    # Judge LLM-adjudicator completion — the platform's canonical per-attack LLM call.
+    llm_ms: list[float] = []
+    llm_probe_enabled = bool(settings.has_llm) and llm_probe_samples > 0
+    if llm_probe_enabled and probe_attempts:
+        adj = make_llm_adjudicator(settings)
+        if adj is not None:
+            for attempt in probe_attempts[:llm_probe_samples]:
+                view = JudgeView.of(attempt)
+                l0 = time.perf_counter()
+                try:
+                    adj(view)  # one real LLM-adjudicator completion (billed)
+                except Exception:  # never let a probe failure sink the whole run
+                    continue
+                llm_ms.append((time.perf_counter() - l0) * 1000)
+
+    # ── FULL regression suite (spec p12): replay every promoted case end-to-end ─
+    # Uses the same fresh Settings, so run_regression's Store/TargetClient resolve to
+    # the temp DB — the real data store is still never touched (asserted below).
+    reg_t0 = time.perf_counter()
+    reg = await run_regression(settings=settings)
+    reg_seconds = time.perf_counter() - reg_t0
+    reg_cases = int(reg.get("total", 0))
 
     real_after = _db_stat(real_db_path)
 
@@ -306,6 +387,17 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
         judge=Phase.of("judge", judge_ms),
         storage=Phase.of("storage", storage_ms),
         burst_http=Phase.of("burst_http", burst_ms),
+        llm_call_latency=Phase.of("llm_call_latency", llm_ms),
+        llm_probe_samples=len(llm_ms),
+        llm_probe_enabled=llm_probe_enabled,
+        regression_ran=True,
+        regression_cases=reg_cases,
+        regression_seconds=round(reg_seconds, 3),
+        regression_cases_per_s=round(reg_cases / reg_seconds, 3) if reg_seconds > 0 else 0.0,
+        regression_passed=int(reg.get("passed", 0)),
+        regression_failed=int(reg.get("failed", 0)),
+        regression_skipped=int(reg.get("skipped", 0)),
+        regression_errored=int(reg.get("errored", 0)),
         store_write_ops=store_write_ops,
         storage_writes_per_s=round(store_write_ops / total_storage_s, 1) if total_storage_s > 0 else 0.0,
         exploits_stored=exploits_stored,
@@ -322,15 +414,19 @@ async def _run(attacks: int, real_db_path: Path) -> LoadTestResult:
     )
 
 
-def run_loadtest(attacks: int = 100, *, real_db_path: Path | str | None = None) -> LoadTestResult:
+def run_loadtest(attacks: int = 100, *, real_db_path: Path | str | None = None,
+                 llm_probe_samples: int = 3) -> LoadTestResult:
     """Run the load test synchronously and return the captured metrics.
 
     ``attacks`` is the number of attack executions (unauthenticated seeds cycled).
     ``real_db_path`` is the production DB whose immutability we assert; it defaults
     to the repo's ``data/adversaryforge.sqlite`` (resolved without importing the
     real settings, so pointing DATA_DIR at the temp dir does not hide it).
+    ``llm_probe_samples`` bounds the number of real Judge LLM-adjudicator calls timed
+    for the LLM-call-latency phase — key-gated, so a keyless run records ``n=0`` and
+    never bills the API. Keep it small; the 100-attack loop stays deterministic.
     """
     if real_db_path is None:
         repo_root = Path(__file__).resolve().parent.parent.parent
         real_db_path = repo_root / "data" / "adversaryforge.sqlite"
-    return asyncio.run(_run(attacks, Path(real_db_path)))
+    return asyncio.run(_run(attacks, Path(real_db_path), llm_probe_samples=llm_probe_samples))

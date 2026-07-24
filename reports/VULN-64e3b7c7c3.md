@@ -30,7 +30,7 @@ Observed: No throttling across 12 rapid requests (no 429) — rate limiting abse
 **3.** Observe the target's response (HTTP 200):
 
 ```
-burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in <elapsed>ms
+burst statuses=[200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] in 604ms
 ```
 
 **4.** Confirm the observed behavior below is present (and differs from the expected safe behavior). The finding reproduces when it is.

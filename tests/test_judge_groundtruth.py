@@ -285,6 +285,31 @@ def test_rate_limit_all_errored_burst_is_inconclusive():
     assert v.outcome == Outcome.error
 
 
+# ── transport crypto (A02): HSTS presence gates the invariant ──────────────
+def test_transport_missing_hsts_is_success():
+    # A served 200 whose response headers omit Strict-Transport-Security is an A02
+    # finding (TLS not pinned for browsers), decided deterministically from headers.
+    v = JUDGE.evaluate(_view("INV-TRANSPORT-SECURITY", status=200,
+                             raw={"_response_headers": {"server": "caddy"}}))
+    assert v.outcome == Outcome.success
+    assert v.severity == "low"
+    assert v.is_regression_candidate
+
+
+def test_transport_present_hsts_is_defense_held():
+    v = JUDGE.evaluate(_view("INV-TRANSPORT-SECURITY", status=200,
+                             raw={"_response_headers": {"strict-transport-security": "max-age=63072000"}}))
+    assert v.outcome == Outcome.failure
+    assert v.outcome != Outcome.success
+
+
+def test_transport_without_captured_headers_is_inconclusive_not_a_finding():
+    # An older/replayed attempt that carries no captured headers must NOT be stamped a
+    # finding — the rule defers (partial with no LLM), never a false A02 success.
+    v = JUDGE.evaluate(_view("INV-TRANSPORT-SECURITY", status=200, raw={}))
+    assert v.outcome != Outcome.success
+
+
 # ── unreachable target is error, never a finding ───────────────────────────
 def test_network_error_is_error_not_success():
     v = JUDGE.evaluate(_view("INV-AUTHZ-PATIENT", status=0))

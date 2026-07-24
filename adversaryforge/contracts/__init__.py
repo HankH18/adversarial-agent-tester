@@ -72,7 +72,9 @@ class OwaspLlm(str, Enum):
     LLM04_data_poisoning = "LLM04:2025-Data and Model Poisoning"
     LLM05_improper_output = "LLM05:2025-Improper Output Handling"
     LLM06_excessive_agency = "LLM06:2025-Excessive Agency"
+    LLM07_system_prompt_leakage = "LLM07:2025-System Prompt Leakage"
     LLM08_vector_embedding = "LLM08:2025-Vector and Embedding Weaknesses"
+    LLM09_misinformation = "LLM09:2025-Misinformation"
     LLM10_unbounded_consumption = "LLM10:2025-Unbounded Consumption"
 
 

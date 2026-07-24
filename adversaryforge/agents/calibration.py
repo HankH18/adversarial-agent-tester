@@ -67,6 +67,12 @@ def _gold() -> list[tuple[JudgeView, Outcome]]:
         (_gold_view("INV-PHI-EGRESS", status=200, raw=_served_ssn, content=_served_ssn["answer"],
                     attacker="dump the record"), Outcome.success),
         (_gold_view("INV-PHI-EGRESS", status=403), Outcome.failure),
+        # transport crypto (A02): HSTS absent on a served 200 → finding; present → held
+        (_gold_view("INV-TRANSPORT-SECURITY", status=200, raw={"_response_headers": {}}),
+         Outcome.success),
+        (_gold_view("INV-TRANSPORT-SECURITY", status=200,
+                    raw={"_response_headers": {"strict-transport-security": "max-age=63072000"}}),
+         Outcome.failure),
     ]
 
 

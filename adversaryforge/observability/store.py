@@ -7,13 +7,17 @@ Data-quality contract (enforced here, per the platform requirements):
   * no duplicate exploit for the same attack sequence — enforced by a UNIQUE index
     on a content `dedupe_key` (hash of category + minimal transcript).
 
-Migrations: `apply_migrations` is idempotent — every table and index is created
-`IF NOT EXISTS`, so a fresh DB gets the full current schema and re-opening an
-up-to-date DB is a no-op; existing rows are never dropped or rewritten. The current
-`schema_version` is recorded in `meta`. Adding a field to a model means the fresh
-schema includes it; upgrading a *pre-existing older* DB in place would need an
-explicit `ALTER TABLE ... ADD COLUMN` step keyed off `schema_version` (the runtime
-DB here is disposable/regenerated, so that path is documented rather than shipped).
+Migrations (versioned, stepwise, row-preserving): a fresh DB gets the full current
+schema from the `CREATE TABLE IF NOT EXISTS` baseline and is stamped at
+`SCHEMA_VERSION`. A *pre-existing older* DB is upgraded in place — `apply_migrations`
+reads the stored version (the `meta` `schema_version` row, mirrored to
+`PRAGMA user_version`) and runs the ordered forward steps in `_MIGRATIONS` from
+`stored+1 .. SCHEMA_VERSION`, each an explicit `ALTER TABLE ... ADD COLUMN` + backfill
+that keeps every existing row, then stamps the new version. Steps are defensive
+(add-column-if-absent, recompute-from-source backfill), so they are safe to re-run and
+safe against a fresh baseline that already has the column. To add a field: extend the
+baseline DDL, bump `SCHEMA_VERSION`, and register one migration step — existing records
+migrate without data loss.
 """
 from __future__ import annotations
 
@@ -33,7 +37,7 @@ from adversaryforge.contracts import (
     VulnReport,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _now() -> str:
@@ -75,7 +79,15 @@ class Store:
 
     # ── schema / migrations ────────────────────────────────────────────────
     def apply_migrations(self) -> None:
+        """Create the baseline schema for a fresh DB, then run ordered forward
+        migration steps to upgrade a pre-existing older DB in place (see the module
+        docstring). Idempotent: re-opening an up-to-date DB runs zero steps."""
         c = self._conn
+        # A DB is "fresh" iff the core data tables don't exist yet — captured BEFORE
+        # the baseline runs, because the baseline is what creates them.
+        fresh = c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runs'"
+        ).fetchone() is None
         c.executescript(
             """
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -89,7 +101,8 @@ class Store:
                 mode TEXT,
                 authenticated INTEGER DEFAULT 0,
                 cost_usd REAL DEFAULT 0,
-                notes TEXT
+                notes TEXT,
+                finding_count INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS attempts (
@@ -200,12 +213,38 @@ class Store:
             CREATE INDEX IF NOT EXISTS ix_spans_parent ON spans(parent_span_id);
             """
         )
+        # A fresh DB IS the current baseline; an existing DB reports whatever the last
+        # writer stamped. Run only the forward steps between the two.
+        current = SCHEMA_VERSION if fresh else self._stored_schema_version()
+        for version in range(current + 1, SCHEMA_VERSION + 1):
+            step = _MIGRATIONS.get(version)
+            if step is not None:
+                step(c)  # explicit ALTER + backfill; existing rows preserved
+        self._stamp_schema_version(SCHEMA_VERSION)
+        c.commit()
+
+    def _stored_schema_version(self) -> int:
+        """Version an existing DB was last stamped at. Prefers the `meta` row (what
+        prior code wrote), falls back to `PRAGMA user_version`, then to 1 (the oldest
+        shipped schema) for a DB that has tables but was never stamped."""
+        c = self._conn
+        row = c.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        if row is not None and row["value"] is not None:
+            try:
+                return int(row["value"])
+            except (TypeError, ValueError):
+                pass
+        uv = c.execute("PRAGMA user_version").fetchone()[0]
+        return int(uv) if uv else 1
+
+    def _stamp_schema_version(self, version: int) -> None:
+        c = self._conn
         c.execute(
             "INSERT INTO meta(key,value) VALUES('schema_version',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (str(SCHEMA_VERSION),),
+            (str(version),),
         )
-        c.commit()
+        c.execute(f"PRAGMA user_version = {int(version)}")
 
     # ── writes ─────────────────────────────────────────────────────────────
     def start_run(self, target_url: str, target_version: str, mode: str,
@@ -414,6 +453,64 @@ class Store:
                  "output_tokens": r["ot"], "llm_calls": r["calls"]}
                 for r in self._conn.execute(q, params).fetchall()]
 
+    def cost_rate(self, run_id: str | None = None, recent_runs: int = 10) -> dict[str, Any]:
+        """Observability Q5 — "how much did this run cost, and at what RATE is cost
+        scaling?" `cost_summary`/`cost_by_agent` give TOTALS only; this adds the *rate*:
+
+          * total_usd / llm_calls — the scoped spend (this run if `run_id`, else all),
+          * usd_per_hour          — burn rate over the elapsed cost-ledger window,
+          * usd_per_call          — average spend per LLM call,
+          * elapsed_seconds       — wall-clock span the burn was measured over,
+          * per_run               — spend of each of the last `recent_runs` runs,
+                                    oldest→newest (the cross-run scaling evidence),
+          * usd_per_run_slope     — least-squares slope of that series (USD/run):
+                                    >0 cost is scaling UP, <0 down, ~0 flat,
+          * trend                 — "rising" / "falling" / "flat", from the slope.
+
+        total/rate are scoped by `run_id`; per_run/slope/trend are always the
+        platform-wide cross-run trend (a single run has no slope)."""
+        q = ("SELECT COALESCE(SUM(usd),0) usd, COUNT(*) calls, MIN(ts) t0, MAX(ts) t1 "
+             "FROM cost_ledger")
+        params: tuple = ()
+        if run_id:
+            q += " WHERE run_id=?"
+            params = (run_id,)
+        r = self._conn.execute(q, params).fetchone()
+        total = float(r["usd"] or 0.0)
+        calls = int(r["calls"] or 0)
+        elapsed = _elapsed_seconds(r["t0"], r["t1"])
+        usd_per_hour = round(total / (elapsed / 3600.0), 6) if elapsed else None
+        usd_per_call = round(total / calls, 6) if calls else None
+
+        # Cross-run scaling: cost of each of the most recent runs, oldest→newest.
+        rows = self._conn.execute(
+            "SELECT run_id, started_at, usd FROM ("
+            "  SELECT r.run_id run_id, r.started_at started_at, "
+            "         COALESCE(SUM(cl.usd),0) usd "
+            "  FROM runs r LEFT JOIN cost_ledger cl ON cl.run_id=r.run_id "
+            "  GROUP BY r.run_id ORDER BY r.started_at DESC LIMIT ?"
+            ") ORDER BY started_at ASC",
+            (max(1, recent_runs),),
+        ).fetchall()
+        per_run = [{"run_id": x["run_id"], "started_at": x["started_at"],
+                    "usd": round(float(x["usd"] or 0.0), 6)} for x in rows]
+        slope = _linreg_slope([p["usd"] for p in per_run])
+        if slope is None or abs(slope) <= 1e-9:
+            trend = "flat"
+        else:
+            trend = "rising" if slope > 0 else "falling"
+        return {
+            "run_id": run_id,
+            "total_usd": round(total, 6),
+            "llm_calls": calls,
+            "elapsed_seconds": elapsed,
+            "usd_per_hour": usd_per_hour,
+            "usd_per_call": usd_per_call,
+            "per_run": per_run,
+            "usd_per_run_slope": round(slope, 6) if slope is not None else None,
+            "trend": trend,
+        }
+
     def agent_timeline(self, run_id: str, limit: int = 200) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             "SELECT ts, agent, action, detail FROM events WHERE run_id=? "
@@ -510,3 +607,58 @@ class Store:
 
 def _enum(v: Any) -> str:
     return v.value if hasattr(v, "value") else str(v)
+
+
+def _elapsed_seconds(t0: str | None, t1: str | None) -> float:
+    """Seconds between two stored ISO-8601 cost-ledger timestamps (0.0 if either is
+    missing/unparseable or if they coincide)."""
+    if not t0 or not t1:
+        return 0.0
+    try:
+        return max(
+            0.0, (datetime.fromisoformat(t1) - datetime.fromisoformat(t0)).total_seconds()
+        )
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _linreg_slope(ys: list[float]) -> float | None:
+    """Least-squares slope of `ys` against index 0..n-1 (USD per run). None when there
+    are fewer than two points to fit a line through."""
+    n = len(ys)
+    if n < 2:
+        return None
+    xs = list(range(n))
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom == 0:
+        return None
+    num = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    return num / denom
+
+
+# ── forward migration steps ─────────────────────────────────────────────────
+# version N: upgrade a DB at version N-1 to N. Each step is defensive/idempotent —
+# add-column-if-absent + recompute-from-source backfill — so it is safe to re-run and
+# safe against a fresh baseline that already has the new shape. This is the pattern:
+# to add a field, extend the baseline DDL, bump SCHEMA_VERSION, and register the
+# ALTER+backfill here; existing rows migrate without data loss.
+def _migrate_to_4(c: sqlite3.Connection) -> None:
+    """v4 — persist a per-run `finding_count` on `runs`, backfilled from confirmed
+    exploits (joined via attempts) so pre-existing runs keep an accurate count rather
+    than defaulting to 0."""
+    cols = {row[1] for row in c.execute("PRAGMA table_info(runs)").fetchall()}
+    if "finding_count" not in cols:
+        c.execute("ALTER TABLE runs ADD COLUMN finding_count INTEGER NOT NULL DEFAULT 0")
+    c.execute(
+        "UPDATE runs SET finding_count = ("
+        "  SELECT COUNT(*) FROM exploits e "
+        "  JOIN attempts a ON a.attempt_id = e.attempt_id "
+        "  WHERE a.run_id = runs.run_id)"
+    )
+
+
+_MIGRATIONS = {
+    4: _migrate_to_4,
+}

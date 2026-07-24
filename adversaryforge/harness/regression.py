@@ -159,7 +159,6 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
         executor = SeedExecutor(client)
         _judge_seen = {"usd": 0.0, "in": 0, "out": 0}  # cumulative Judge-LLM spend metered
-        passfail_before = store.passfail_rates()  # snapshot for cross-category regression
         tracer = Tracer(store, run_id) if settings.trace_enabled else None
 
         # use_tracer guarantees the tracer contextvar is reset on ANY exit path
@@ -254,18 +253,22 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
                 details.append(row)
 
-            # Cross-category regression: did fixing/replaying push any OTHER category's
-            # success count up? Exclude the categories we exercised this run — a replayed
-            # still-open case writes a fresh success verdict for its OWN category, which is
-            # not a cross-category effect. (A true cross-category signal needs a
-            # cross-VERSION comparison; within one replay window this is ~always empty.)
-            exercised = {r["category"] for r in details if r["result"] != "skipped"}
-            cross_category = [c for c in
-                              detect_cross_category_regression(passfail_before, store.passfail_rates())
-                              if c not in exercised]
+            # Cross-VERSION regression: compare THIS target version's per-category
+            # pass/fail against the PREVIOUS version's stored rates (via Store read
+            # methods — passfail_rates(target_version=…) + resilience_trend). Flag a
+            # category that was PASSING (no successful attacks) at the prior version but is
+            # now FAILING (an attack succeeds) at this version WHILE another category was
+            # being fixed — the classic "fixing one thing broke another" signal. The old
+            # within-run snapshot comparison was a live no-op: it excluded exactly the
+            # categories exercised this run, so it could never fire. This cross-version view
+            # is the only one that can actually see a regression a fix elsewhere introduced.
+            current_pf = store.passfail_rates(target_version=version)
+            prev_version = _previous_version(store, version)
+            prev_pf = store.passfail_rates(target_version=prev_version) if prev_version else {}
+            cross_category = detect_cross_version_regression(prev_pf, current_pf)
             if cross_category:
                 store.log_event(run_id, "harness", "cross_category_regression",
-                                f"success rose in: {', '.join(cross_category)}")
+                                f"regressed vs {prev_version}: {', '.join(cross_category)}")
 
         store.end_run(run_id, store.cost_summary(run_id)["usd"])
 
@@ -305,12 +308,30 @@ async def run_regression(*, settings: Settings | None = None) -> dict[str, Any]:
 
 
 async def _session_live(client) -> bool:
-    """True only if the configured session is one the target actually accepts."""
+    """True only if the configured session is one the target ACTUALLY accepts.
+
+    Robust to how a deployment reports liveness. Prefer the canonical, purpose-built
+    probe ``/v1/auth/status`` — unauthenticated, documented never-errors, and returns an
+    explicit ``authenticated`` boolean that is true ONLY when the session cookie resolves
+    to a live session (openapi-week2 §/v1/auth/status). Fall back to the authenticated
+    identity endpoint ``/v1/auth/me`` (a 200 means the cookie was accepted). The session
+    is LIVE if EITHER confirms it, so a valid physician cookie is not wrongly downgraded
+    to unauthenticated — which would SKIP every ``requires_auth`` regression case (the
+    observed "N skipped despite a valid cookie" bug) just because one probe's status
+    semantics differ on a given deployment. It is DEAD only when neither confirms.
+    """
     try:
-        resp = await client.request("GET", "/v1/auth/me")
+        status = await client.request("GET", "/v1/auth/status")
+        body = status.json
+        if isinstance(body, dict) and bool(body.get("authenticated")):
+            return True
+    except Exception:
+        pass
+    try:
+        me = await client.request("GET", "/v1/auth/me")
     except Exception:
         return False
-    return resp.status_code == 200
+    return me.status_code == 200
 
 
 def _meter_judge_llm(judge, store, run_id: str, seen: dict) -> None:
@@ -337,6 +358,11 @@ def detect_cross_category_regression(before: dict, after: dict) -> list[str]:
     category improved.
 
     Returns the sorted list of category names whose success count increased.
+
+    NOTE: this compares two arbitrary snapshots and is used for the pure-detector unit
+    tests. The LIVE harness wiring uses :func:`detect_cross_version_regression` instead,
+    because a within-run before/after can never see a genuine cross-category effect (it
+    excludes exactly the categories exercised this run). See ``run_regression``.
     """
     regressed: list[str] = []
     for category, outcomes in (after or {}).items():
@@ -345,3 +371,57 @@ def detect_cross_category_regression(before: dict, after: dict) -> list[str]:
         if after_succ > before_succ:
             regressed.append(category)
     return sorted(regressed)
+
+
+def _succ(snapshot: dict, category: str) -> int:
+    """Successful-attack count for ``category`` in a passfail snapshot (0 if absent)."""
+    return int(((snapshot or {}).get(category) or {}).get(Outcome.success.value, 0) or 0)
+
+
+def detect_cross_version_regression(before: dict, after: dict) -> list[str]:
+    """Flag a category that regressed BETWEEN TWO TARGET VERSIONS while another was fixed.
+
+    ``before`` / ``after`` are ``Store.passfail_rates(target_version=…)`` snapshots for
+    the PREVIOUS and CURRENT target versions (shape ``{category: {outcome: count}}``).
+    A category is flagged iff ALL hold:
+
+      * it was **passing** at the prior version — present there with zero successful
+        attacks (the defense held), and
+      * it is now **failing** at the current version — an attack succeeds (success > 0),
+      * AND at least one OTHER category was **being fixed** across the bump (its success
+        count fell).
+
+    That last condition is what makes this the *fixing-one-thing-broke-another* signal
+    rather than an ordinary newly-found bug: we only raise the cross-version flag when
+    there is concurrent evidence something else was actively being remediated. Returns
+    the sorted list of regressed category names (empty when the pattern is absent).
+    """
+    # Nothing was being remediated across the bump → not the cross-fix pattern.
+    being_fixed = any(_succ(after, c) < _succ(before, c) for c in (before or {}))
+    if not being_fixed:
+        return []
+    regressed = [
+        category
+        for category in (after or {})
+        if category in (before or {})
+        and _succ(before, category) == 0     # was passing at the prior version
+        and _succ(after, category) > 0       # is now failing at the current version
+    ]
+    return sorted(regressed)
+
+
+def _previous_version(store: Store, current_version: str) -> str | None:
+    """The most recent target version (by run start time) that DIFFERS from
+    ``current_version`` — the baseline this version's pass/fail is compared against.
+
+    Reads ``Store.resilience_trend()`` (rows ordered by ``started_at`` ascending) and
+    keeps the latest distinct-from-current version seen, so a run bump from vN-1 → vN
+    yields vN-1. Returns None when only the current version has ever been recorded, in
+    which case there is no prior baseline and the cross-version check is skipped.
+    """
+    prev: str | None = None
+    for row in store.resilience_trend():  # chronological (ORDER BY started_at)
+        v = row.get("target_version")
+        if v and v != current_version:
+            prev = v
+    return prev

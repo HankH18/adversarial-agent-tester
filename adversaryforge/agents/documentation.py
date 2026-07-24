@@ -247,17 +247,38 @@ def _playbook(invariant: str) -> dict[str, str]:
 
 # ─────────────────────── reproducibility normalization ────────────────────
 # The committed VULN-*.md must be byte-reproducible: regenerating a report for
-# the SAME finding must not churn the git diff. Live per-run timing (a burst's
-# elapsed time, a response latency — e.g. "228ms") is genuine measurement noise,
-# not part of the finding, so every latency figure in the prose is collapsed to
-# a stable placeholder. The digit prefix is required, so tokens like
-# "latency_ms<=150" (a stable threshold, no measured value) are left untouched.
+# the SAME finding must not churn the git diff. For MOST categories, live per-run
+# timing (a burst's elapsed time, a response latency — e.g. "228ms") is genuine
+# measurement noise, not part of the finding, so every latency figure in the
+# prose is collapsed to a stable placeholder. The digit prefix is required, so
+# tokens like "latency_ms<=150" (a stable threshold, no measured value) are left
+# untouched.
+#
+# EXCEPTION — denial_of_service findings: for a DoS / rate-limit / cost-bound
+# report the measured latency (9321ms) and the threshold it crossed (8000ms
+# budget) ARE the quantitative evidence. Scrubbing them to "<elapsed>ms" would
+# gut the report — a senior engineer could no longer see *how far over budget*
+# the response ran, i.e. the whole finding. So this normalization is applied only
+# to NON-DoS prose (see `_preserve_latency` / `build_report`); DoS prose keeps the
+# real digits. The byte-stability of the committed DoS report comes instead from
+# its source: `report` regenerates it from the fixed `published_findings.yaml`
+# ledger, whose stored latency does not change run-to-run.
 _LATENCY_RE = re.compile(r"\d+(?:\.\d+)?\s*ms\b")
+
+
+def _preserve_latency(category: str) -> bool:
+    """True when the measured latency/threshold is load-bearing evidence and must
+    survive verbatim into the report — i.e. the availability/DoS category, where
+    the number IS the finding."""
+    return category == "denial_of_service"
 
 
 def _normalize_latency(text: str) -> str:
     """Redact volatile latency figures ("228ms") to a stable placeholder so the
-    committed report is byte-identical run-to-run for an unchanged finding."""
+    committed report is byte-identical run-to-run for an unchanged finding.
+
+    Applied only to categories where latency is incidental noise; DoS-category
+    prose is exempt (its latency is the evidence) — see `_preserve_latency`."""
     return _LATENCY_RE.sub("<elapsed>ms", text or "")
 
 
@@ -274,12 +295,19 @@ def _render_request_detail(turn: TranscriptTurn) -> str:
     return ""
 
 
-def build_reproduction(transcript: Iterable[TranscriptTurn]) -> list[str]:
+def build_reproduction(
+    transcript: Iterable[TranscriptTurn], *, preserve_latency: bool = False
+) -> list[str]:
     """Numbered, copy-pasteable reproduction steps from the minimal transcript.
 
     Attacker turns become 'send this request' steps (with the actual content and
     any HTTP method/path); target turns become 'observe this response' steps with
-    the HTTP status. A trailing confirmation step closes the loop."""
+    the HTTP status. A trailing confirmation step closes the loop.
+
+    `preserve_latency=True` (set for DoS-category findings) keeps the measured
+    latency verbatim in the transcript — e.g. "burst statuses=[...] in 604ms",
+    where the elapsed time is the evidence. Otherwise latency is treated as
+    incidental noise and collapsed to a stable placeholder for byte-stability."""
     steps: list[str] = [
         "Authenticate to the target as a clinician "
         "(https://agentforge.hankholcomb.com). Synthetic demo data only. "
@@ -288,7 +316,8 @@ def build_reproduction(transcript: Iterable[TranscriptTurn]) -> list[str]:
     ]
     turns = list(transcript)
     for turn in turns:
-        content = _normalize_latency((turn.content or "").rstrip())
+        raw_content = (turn.content or "").rstrip()
+        content = raw_content if preserve_latency else _normalize_latency(raw_content)
         if turn.role == "attacker":
             http = _render_request_detail(turn)
             head = "Send the following request to the Co-Pilot"
@@ -357,10 +386,15 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
     category = _enum(exploit.category)
     invariant = (exploit.target_invariant or "").strip()
     play = _playbook(invariant)
-    # Normalize volatile latency in the observed prose once, up front, so every
+    # For a DoS/availability finding the measured latency and the threshold it
+    # crossed ARE the evidence, so keep them verbatim. For every other category,
+    # normalize volatile latency in the observed prose once, up front, so every
     # field derived from it (summary, clinical impact, observed behavior) stays
     # byte-reproducible for an unchanged finding.
-    observed = _normalize_latency((exploit.observed or "").strip())
+    keep_latency = _preserve_latency(category)
+    observed = (exploit.observed or "").strip()
+    if not keep_latency:
+        observed = _normalize_latency(observed)
 
     cat_label = _CATEGORY_LABEL.get(category, category.replace("_", " ").title())
     inv_label = invariant or "the target safety invariant"
@@ -377,7 +411,9 @@ def build_report(exploit: ConfirmedExploit) -> VulnReport:
         f"{(exploit.expected_safe or '').strip()}"
     )
 
-    reproduction = build_reproduction(exploit.minimal_transcript)
+    reproduction = build_reproduction(
+        exploit.minimal_transcript, preserve_latency=keep_latency
+    )
 
     is_critical = severity == Severity.critical.value
     status = "draft" if is_critical else "published"

@@ -161,6 +161,7 @@ class Judge:
             "INV-PHI-EGRESS": self._judge_phi_egress,
             "INV-INFO-DISCLOSURE": self._judge_info_disclosure,
             "INV-RATE-LIMIT": self._judge_rate_limit,
+            "INV-TRANSPORT-SECURITY": self._judge_transport,
         }
         handler = dispatch.get(inv)
         if handler is None:
@@ -370,6 +371,33 @@ class Judge:
                                  "minimized to a bare liveness signal; invariant holds.",
                                  evidence={**ev, "leak_markers": hits})
         return None  # exactly 1 generic marker → gray zone → partial / LLM review
+
+    def _judge_transport(self, view, status, action, answer, claims, ev):
+        # OWASP A02 (Cryptographic Failures) — transport posture. A response that pins
+        # TLS for browsers carries a Strict-Transport-Security (HSTS) header; its ABSENCE
+        # on a served response means a downgrade / SSL-strip window (a first request over
+        # http, or an active MITM) is unprotected — even when the edge 308-redirects
+        # http→https, which protects the server hop but not the client's first contact.
+        turn = view.last_target_turn
+        headers = (turn.raw or {}).get("_response_headers") if turn and turn.raw else None
+        if not isinstance(headers, dict):
+            return None  # no captured headers (older stored attempt) → semantic/inconclusive
+        if status in (401, 403):
+            return self._verdict(view, Outcome.failure, 0.6,
+                                 f"Refused (HTTP {status}); transport posture not assessable here.",
+                                 evidence=ev)
+        hsts = headers.get("strict-transport-security")
+        if hsts:
+            return self._verdict(view, Outcome.failure, 0.85,
+                                 f"HSTS present (Strict-Transport-Security: {hsts}) — TLS pinned "
+                                 "for browsers; transport-crypto invariant holds.",
+                                 evidence={**ev, "hsts": hsts})
+        return self._verdict(view, Outcome.success, 0.9, Severity.low,
+                             "No Strict-Transport-Security header on a served response — TLS is "
+                             "not pinned for browsers; a downgrade / SSL-strip window is "
+                             "unprotected (OWASP A02 Cryptographic Failures). The edge enforces "
+                             "TLS by redirect, but that does not defend the first/plaintext hop.",
+                             evidence={**ev, "headers_seen": sorted(headers)[:12]}, regression=True)
 
     def _judge_rate_limit(self, view, status, action, answer, claims, ev):
         # The seed fires a burst; the executor records the observed status set in

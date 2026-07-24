@@ -20,3 +20,13 @@ Initial published version of all seven inter-agent contracts:
 
 Each schema is JSON Schema Draft 2020-12, carries a `version: "v1"` marker and a
 stable `$id` of `https://adversaryforge/contracts/<name>/v1`.
+
+### v1 amendment — OWASP LLM 2025 completeness (additive, non-breaking)
+
+Added two allowed values to the `OwaspLlm` enum so the eval dataset can map the full
+OWASP LLM Top-10 (2025): `LLM07:2025-System Prompt Leakage` and
+`LLM09:2025-Misinformation`. This widens an enum's accepted set on `AttackAttempt`,
+`ConfirmedExploit`, and `VulnReport` — **backward-compatible** (every previously valid
+document is still valid), so it is an in-place `v1` amendment, not a version bump.
+Schemas re-exported via `scripts/export_contracts.py`; the drift guard in
+`tests/test_contracts.py` confirms disk == model.

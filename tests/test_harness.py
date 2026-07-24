@@ -15,16 +15,20 @@ from httpx import Response
 
 from adversaryforge.config import Settings
 from adversaryforge.contracts import (
+    AttackAttempt,
     AttackCategory,
     ConfirmedExploit,
     Outcome,
     RegressionCandidate,
     Severity,
     TranscriptTurn,
+    Verdict,
 )
 from adversaryforge.harness.regression import (
     _decide_case,
+    _previous_version,
     detect_cross_category_regression,
+    detect_cross_version_regression,
     run_regression,
 )
 from adversaryforge.observability.store import Store
@@ -78,30 +82,42 @@ async def test_empty_regression_db_is_not_green(tmp_path, monkeypatch):
     assert result["all_passed"] is False  # empty is NOT green
 
 
-def test_full_exploit_db_scan_meets_time_slo():
-    # SLO (Week_3 doc:498-501; ARCHITECTURE §7): a full scan of the exploit DB must
-    # complete within a defined time budget. Populate a realistic DB and MEASURE it.
-    # Budget is deliberately generous (SQLite enumerates hundreds of rows in <10ms),
-    # so this is a real regression guard on the scan cost, never a flaky timing test.
-    import tempfile
+async def test_full_regression_scan_meets_time_slo(tmp_path, monkeypatch):
+    # SLO (Week_3 doc:498-501; ARCHITECTURE §7): a full regression scan must complete
+    # within a defined time budget. The OLD test timed a bare `list_exploits()` SELECT —
+    # NOT the scan the SLO is about. This measures the REAL path: load every regression
+    # case, replay its seed through the throttled TargetClient, re-judge the invariant,
+    # and record attempt+verdict — the whole replay+re-judge loop `run_regression` runs.
+    # Budget has generous headroom for slow CI (30 cases replay+re-judge in <0.1s
+    # locally), so it is a real regression guard on scan cost, never a flaky timing test.
     import time
-    from pathlib import Path
 
-    with tempfile.TemporaryDirectory() as d:
-        store = Store(Path(d) / "slo.sqlite")
-        for i in range(500):
-            store.record_exploit(ConfirmedExploit(
-                exploit_id=f"ex_{i}", attempt_id="at", verdict_id="vd",
-                category=AttackCategory.data_exfiltration, severity=Severity.high,
-                target_invariant="INV-AUTHZ-PATIENT",
-                minimal_transcript=[TranscriptTurn(role="attacker", content=f"probe-{i}")],
-                expected_safe="403", observed=f"leak-{i}"))
+    st = _settings(tmp_path, monkeypatch)
+    store = Store(st.db_path)
+    n_cases = 30
+    for i in range(n_cases):
+        # df-authz-chat-noauth: requires_auth=False → every case actually replays.
+        # Distinct case_id per iteration (record_regression_case keys on case_id).
+        store.record_regression_case(RegressionCandidate(
+            case_id=f"rc_slo_{i}", exploit_id=f"ex_slo_{i}",
+            category=AttackCategory.data_exfiltration,
+            request={"seed_id": "df-authz-chat-noauth", "steps": []},
+            assertion={"kind": "invariant_holds", "invariant": "INV-AUTHZ-PATIENT"},
+            severity=Severity.high))
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        chat = router.post(f"{BASE}/v1/chat").mock(return_value=Response(403, json={}))
         t0 = time.perf_counter()
-        rows = store.list_exploits()          # SELECT * FROM exploits — the full scan
+        result = await run_regression(settings=st)
         elapsed = time.perf_counter() - t0
-        assert len(rows) == 500               # scan really enumerated the whole DB
-        assert elapsed < 2.0, f"full exploit-DB scan took {elapsed:.3f}s (budget 2.0s)"
-        store.close()
+
+    assert result["total"] == n_cases          # the whole DB was scanned
+    assert result["passed"] == n_cases         # each case really replayed + re-judged
+    assert chat.called                          # the replay hit the target, not a stub
+    assert len(chat.calls) == n_cases           # one replay per case — no work skipped
+    assert elapsed < 5.0, f"full regression scan took {elapsed:.3f}s (budget 5.0s)"
 
 
 def test_decide_failure_outcome_passes():
@@ -191,6 +207,98 @@ def test_detect_cross_category_regression_none_when_flat_or_improved():
     before = {"tool_misuse": {"success": 2}}
     after = {"tool_misuse": {"success": 0}}  # improved
     assert detect_cross_category_regression(before, after) == []
+
+
+# ── cross-VERSION regression detector (the LIVE-wired signal) ────────────────
+def test_detect_cross_version_regression_fires_on_genuine_regression():
+    # prompt_injection was PASSING at the prior version (0 successes) and is now FAILING
+    # (1 success) WHILE data_exfiltration was being fixed (successes fell 2 -> 0). That is
+    # the fixing-one-thing-broke-another pattern → prompt_injection is flagged.
+    before = {"data_exfiltration": {"success": 2, "failure": 1},
+              "prompt_injection": {"success": 0, "failure": 3}}
+    after = {"data_exfiltration": {"success": 0, "failure": 3},   # fixed
+             "prompt_injection": {"success": 1, "failure": 2}}    # regressed
+    assert detect_cross_version_regression(before, after) == ["prompt_injection"]
+
+
+def test_detect_cross_version_regression_silent_when_nothing_being_fixed():
+    # prompt_injection rose 0 -> 1, but NOTHING else was being remediated → this is an
+    # ordinary newly-found bug, not a cross-fix regression → no flag (no false-fire).
+    before = {"data_exfiltration": {"success": 2}, "prompt_injection": {"success": 0}}
+    after = {"data_exfiltration": {"success": 2}, "prompt_injection": {"success": 1}}
+    assert detect_cross_version_regression(before, after) == []
+
+
+def test_detect_cross_version_regression_silent_when_all_improved():
+    # Everything got better across the bump → nothing flipped passing→failing → no flag.
+    before = {"data_exfiltration": {"success": 2}, "prompt_injection": {"success": 1}}
+    after = {"data_exfiltration": {"success": 0}, "prompt_injection": {"success": 0}}
+    assert detect_cross_version_regression(before, after) == []
+
+
+def test_detect_cross_version_regression_ignores_brand_new_category():
+    # A category absent at the prior version was never "passing" there — a success at the
+    # current version is not a regression-from-passing, so it must NOT be flagged even
+    # though something else was being fixed.
+    before = {"data_exfiltration": {"success": 2}}
+    after = {"data_exfiltration": {"success": 0},                 # fixed
+             "prompt_injection": {"success": 1}}                  # brand new, not a regression
+    assert detect_cross_version_regression(before, after) == []
+
+
+def _record_outcome(store: Store, version: str, category: AttackCategory,
+                    outcome: Outcome, sev: Severity = Severity.high) -> None:
+    """Record one attempt+verdict under a run tagged with ``version`` so
+    passfail_rates(target_version=version) reflects it — how run_regression feeds the
+    cross-version comparison."""
+    import uuid
+    rid = store.start_run("http://t", version, "authenticated", True)
+    aid = "at_" + uuid.uuid4().hex[:8]
+    store.record_attempt(rid, AttackAttempt(
+        attempt_id=aid, directive_id="d", category=category,
+        target_invariant="INV-X", expected_safe="safe",
+        transcript=[TranscriptTurn(role="attacker", content="x")]))
+    store.record_verdict(rid, Verdict(
+        verdict_id="vd_" + uuid.uuid4().hex[:8], attempt_id=aid, outcome=outcome,
+        severity=sev, confidence=0.9, rationale="r"))
+    store.end_run(rid, 0.0)
+
+
+def test_cross_version_regression_fires_across_two_stored_versions(tmp_path):
+    # Store REAL verdicts under TWO target versions, then run the exact comparison
+    # run_regression performs: _previous_version + passfail_rates(target_version=…) +
+    # detect_cross_version_regression.
+    #   v1: data_exfiltration vuln live (success),   prompt_injection held (failure).
+    #   v2: data_exfiltration FIXED (failure),       prompt_injection now regressed (success).
+    # → prompt_injection is flagged (fixing exfil broke injection).
+    store = Store(tmp_path / "xv.sqlite")
+    _record_outcome(store, "v1", AttackCategory.data_exfiltration, Outcome.success)
+    _record_outcome(store, "v1", AttackCategory.prompt_injection, Outcome.failure)
+    _record_outcome(store, "v2", AttackCategory.data_exfiltration, Outcome.failure)
+    _record_outcome(store, "v2", AttackCategory.prompt_injection, Outcome.success)
+
+    assert _previous_version(store, "v2") == "v1"
+    before = store.passfail_rates(target_version=_previous_version(store, "v2"))
+    after = store.passfail_rates(target_version="v2")
+    assert detect_cross_version_regression(before, after) == ["prompt_injection"]
+
+    # Negative: a v3 where BOTH categories now hold (nothing flips passing→failing) must
+    # NOT false-fire even though prompt_injection was being fixed (v2 success → v3 none).
+    _record_outcome(store, "v3", AttackCategory.data_exfiltration, Outcome.failure)
+    _record_outcome(store, "v3", AttackCategory.prompt_injection, Outcome.failure)
+    assert _previous_version(store, "v3") == "v2"
+    before3 = store.passfail_rates(target_version=_previous_version(store, "v3"))
+    after3 = store.passfail_rates(target_version="v3")
+    assert detect_cross_version_regression(before3, after3) == []
+    store.close()
+
+
+def test_previous_version_none_when_only_current_recorded(tmp_path):
+    # A single-version history has no prior baseline → cross-version check is skipped.
+    store = Store(tmp_path / "one.sqlite")
+    _record_outcome(store, "only", AttackCategory.data_exfiltration, Outcome.success)
+    assert _previous_version(store, "only") is None
+    store.close()
 
 
 # ── integration: run_regression against a respx-mocked target ────────────────
@@ -379,6 +487,62 @@ async def test_expired_cookie_downgrades_to_unauthenticated_and_skips_authed(tmp
     assert result["passed"] == 0
     actions = {e["action"] for e in Store(st.db_path).agent_timeline(result["run_id"])}
     assert "session_expired" in actions
+
+
+async def test_run_regression_runs_authed_case_with_live_session(tmp_path, monkeypatch):
+    # AUTH THREADING: with a configured, LIVE session cookie, a requires_auth regression
+    # case must actually RUN — replayed WITH the session — not be unconditionally skipped.
+    # Regression guard for the audit finding "N skipped despite a valid cookie": the
+    # harness threads build_session(settings) into the TargetClient replay path exactly
+    # like platform.py, and recognizes a live session via /v1/auth/status.
+    _settings(tmp_path, monkeypatch)               # sets data dir + BASE; cookie forced ""
+    monkeypatch.setenv("AGENTFORGE_SESSION_COOKIE", "valid-physician-cookie")
+    st = Settings()                                # re-read WITH the cookie → authed starts True
+    store = Store(st.db_path)
+    # pi-direct-system-prompt-reveal: requires_auth=True, POST /v1/chat.
+    _seed_case(store, "pi-direct-system-prompt-reveal", "ex_authed", "INV-INJECTION-INERT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        # LIVE session: the canonical unauthenticated probe reports the cookie resolves.
+        router.get(f"{BASE}/v1/auth/status").mock(
+            return_value=Response(200, json={"auth_mode": "smart", "authenticated": True}))
+        chat = router.post(f"{BASE}/v1/chat").mock(return_value=Response(403, json={}))
+        result = await run_regression(settings=st)
+
+    assert result["authenticated"] is True
+    assert result["skipped"] == 0                  # the requires_auth case was NOT skipped
+    assert result["cases"][0]["result"] != "skipped"
+    assert chat.called                              # it actually replayed against the target
+    # The replay carried the configured session cookie — threaded via TargetClient, so the
+    # authed plane is exercised with the operator's session rather than anonymously.
+    assert chat.calls.last.request.headers.get("cookie") == "valid-physician-cookie"
+
+
+async def test_run_regression_authed_case_via_auth_me_fallback(tmp_path, monkeypatch):
+    # Robustness: if /v1/auth/status doesn't confirm (unavailable on a deployment), a 200
+    # from the authenticated identity endpoint /v1/auth/me still proves the cookie is live,
+    # so the authed case runs instead of being wrongly downgraded to skipped.
+    _settings(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENTFORGE_SESSION_COOKIE", "valid-physician-cookie")
+    st = Settings()
+    store = Store(st.db_path)
+    _seed_case(store, "pi-direct-system-prompt-reveal", "ex_authed2", "INV-INJECTION-INERT")
+    store.close()
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{BASE}/health").mock(return_value=Response(200, json={"version": "t"}))
+        router.get(f"{BASE}/v1/auth/status").mock(          # doesn't confirm liveness
+            return_value=Response(200, json={"authenticated": False}))
+        router.get(f"{BASE}/v1/auth/me").mock(              # but the cookie IS accepted
+            return_value=Response(200, json={"clinician_id": 1}))
+        chat = router.post(f"{BASE}/v1/chat").mock(return_value=Response(403, json={}))
+        result = await run_regression(settings=st)
+
+    assert result["authenticated"] is True
+    assert result["skipped"] == 0
+    assert chat.called
 
 
 async def test_run_regression_skips_auth_required_case_without_session(tmp_path, monkeypatch):

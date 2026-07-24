@@ -165,3 +165,25 @@
   - kind: http
     method: GET
     path: /status
+- id: crypto-hsts-missing
+  category: data_exfiltration
+  subcategory: transport-crypto
+  title: Served response omits HSTS — TLS not pinned for browsers
+  description: 'OWASP A02 (Cryptographic Failures). The edge redirects http->https (308), but a served 200
+    carries no Strict-Transport-Security header, so a browser''s first/plaintext contact or an active
+    SSL-strip is unprotected. Verified live: only ''server: Caddy'', no HSTS. Transport-layer complement
+    to the info-disclosure seeds; INV-TRANSPORT-SECURITY holds only when HSTS is present.
+
+    '
+  target_invariant: INV-TRANSPORT-SECURITY
+  expected_safe: A Strict-Transport-Security header on served responses (HSTS pins TLS for browsers).
+  test_role: invariant
+  requires_auth: false
+  severity_hint: low
+  exploitability: moderate
+  owasp_web:
+  - A02:2021-Cryptographic Failures
+  steps:
+  - kind: http
+    method: GET
+    path: /health
