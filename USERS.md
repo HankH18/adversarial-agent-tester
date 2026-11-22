@@ -10,7 +10,7 @@
 
 ## Summary — the shape of the problem the users share
 
-The Clinical Co-Pilot (`https://agentforge.hankholcomb.com`) is not a static web app. It is an
+The Clinical Co-Pilot (deployed at `agentforge.hankholcomb.com` during this project; offline today) is not a static web app. It is an
 LLM application whose behavior changes with every model version, every prompt-template edit, every new
 tool, and every multi-turn conversation. Its richest attack surfaces are *behavioral*: 40-turn verbatim
 history replay, uploaded-document field values concatenated into the prompt with no instruction-defusing,

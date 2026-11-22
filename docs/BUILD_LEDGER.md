@@ -1,5 +1,8 @@
 # AdversaryForge — Build Ledger (autonomous loop state)
 
+> **Historical record.** This ledger was last updated on 2026-07-24 and is no longer maintained. The
+> target deployment it names is offline today; read its "live" and "now" statements as of that date.
+
 > **This file is the resumable brain of the overnight autonomous build.** Any session (or context
 > reset) can pick up by reading this top-to-bottom. Update it at the end of every cycle. It is the
 > source of truth for *what is done, what is next, and what is blocked.* Keep it honest — a green
@@ -7,7 +10,7 @@
 
 **Started:** 2026-07-21 · **Operator:** Hank (away — autonomous run authorized)
 **Deadlines:** MVP Tue 11:59 PM · **Final Fri noon**
-**Target (authorized, user-owned):** https://agentforge.hankholcomb.com
+**Target (authorized, user-owned):** `agentforge.hankholcomb.com` (offline today)
 
 ## Operating mode (from operator)
 - I (lead) build the coherent foundation directly, then **fan out subagents** for independent leaves.
@@ -19,10 +22,10 @@
 ## Blockers / secrets needed for FULL coverage (platform runs without them)
 - [ ] **`ANTHROPIC_API_KEY`** not on machine → platform's in-process LLM agents can't call the API.
       **Mitigation:** Judge runs deterministic-only; Red Team mutation + Doc prose driven by Claude
-      Code subagents at build time. Drop key in `.env` to unlock in-process LLM agents.
+      Code subagents at build time. Drop key in `.env` to unlock in-process LLM agents. *(resolved by 2026-07-24: keyed runs and a verified authenticated run completed; see docs/COST_ANALYSIS.md §1 and reports/DEFENSES_HELD.md)*
 - [ ] **`AGENTFORGE_SESSION_COOKIE`** not available → authenticated attack plane (injection/exfil/
       multi-turn) can't hit the deploy. **Mitigation:** run the *unauthenticated* live surface now;
-      authenticated seed campaigns are staged to auto-run when a cookie lands in `.env`.
+      authenticated seed campaigns are staged to auto-run when a cookie lands in `.env`. *(resolved by 2026-07-24: keyed runs and a verified authenticated run completed; see docs/COST_ANALYSIS.md §1 and reports/DEFENSES_HELD.md)*
 - No test-physician credential → OAuth automation deferred; `SessionProvider` is pluggable so a
   cookie or future OAuth backend drops in without code changes elsewhere.
 
@@ -75,7 +78,7 @@ Legend: ⬜ todo · 🔨 doing · 🧪 built-untested · ✅ done+verified · �
 
 ## Cycle log
 
-> **Suite: 241 tests passing** — run `.venv/bin/python -m pytest -q` for the live count. The
+> **Suite: 241 tests passing on 2026-07-24** — run `.venv/bin/python -m pytest -q` for the live count. The
 > per-cycle `(N total)` figures below are historical snapshots at each cycle's close, not the
 > running count.
 

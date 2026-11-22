@@ -17,7 +17,7 @@
 
 AdversaryForge is a **multi-agent adversarial evaluation platform** that continuously hunts, evaluates,
 escalates, and documents vulnerabilities in an AI-assisted clinical chatbot — the OpenEMR Clinical
-Co-Pilot at `https://agentforge.hankholcomb.com` — and does so autonomously, without a human in the
+Co-Pilot (deployed at `agentforge.hankholcomb.com` during this project; offline today) — and does so autonomously, without a human in the
 loop for every step. The design target is not "find a jailbreak." It is a system that can tell, run
 after run and version after version, whether a *category* of exploit is still open, whether a fix
 actually held, and whether closing one hole opened another.
@@ -161,7 +161,7 @@ flowchart TB
         DOC["📝 Documentation Agent<br/>(Claude)"]
     end
 
-    TARGET(["🎯 Clinical Co-Pilot<br/>agentforge.hankholcomb.com<br/>(live, authorized)"])
+    TARGET(["🎯 Clinical Co-Pilot<br/>agentforge.hankholcomb.com<br/>(authorized, offline today)"])
 
     OBS -->|state snapshot| ORCH
     ORCH -->|CampaignDirective v1| RT
@@ -418,9 +418,10 @@ one hazard: **a regression test that passes because behavior drifted, not becaus
    how "fixing one attack introduced a regression in another" is caught (case study, p.10).
 
 The Harness meets an **SLO**: a full regression scan of the exploit DB completes within a defined time
-budget — a target of **< 2 s** for a full exploit-DB scan, measured by a timing test in the suite
-(`tests/test_harness.py::test_full_exploit_db_scan_meets_time_slo`), which runs in CI (`.gitlab-ci.yml`
-/ GitHub Actions) on every push, so the budget is enforced automatically (§12; AS_BUILT §1.5). The invariant *the Judge must never approve a
+budget — a target of **< 2 s** for a full exploit-DB scan. The suite's timing test
+(`tests/test_harness.py::test_full_regression_scan_meets_time_slo`) replays 30 cases against a mocked
+target and fails above 5 s; it runs in CI (GitHub Actions) on every push to `main` and every pull
+request, so that bound is enforced automatically (§12; AS_BUILT §1.5). The invariant *the Judge must never approve a
 confirmed successful exploit* is itself a contract test in the suite — the tester is tested.
 
 ---
@@ -726,7 +727,7 @@ at MVP · ⚪ needs a running platform or the integration-week exercise · ⚠�
 | 13 | Data-quality checks (unique id, required fields, no duplicate; validate in Documentation Agent) | §12; Evidence Packet §4.5 | ✅ designed |
 | 14 | API versioning, DB migrations, queues, workflow state (queue-depth monitoring) | §12; Evidence Packet §4.6 | ✅ designed |
 | 15 | Data model, validation, lineage, access control, reporting | §12 (data model + access-control table) + §11 (lineage via per-agent trace) | ✅ designed |
-| 16 | SQL performance / indexing / full-scan SLO verified in CI | §12 (indexes: severity/category/version) + §7 (SLO); Evidence Packet §4.4 | ✅ SLO timing test runs in CI (`.gitlab-ci.yml` / GH Actions) |
+| 16 | SQL performance / indexing / full-scan SLO verified in CI | §12 (indexes: severity/category/version) + §7 (SLO); Evidence Packet §4.4 | ✅ SLO timing test runs in CI (GitHub Actions) |
 | 17 | Baseline CPU/memory/latency/throughput (100 cases + full regression) | Referenced in §10 (scale plan) and §12 (load-test baseline) | ⚪ needs running platform → MVP/Final |
 | 18 | Load/stress test (100 consecutive live cases; bottleneck + architectural change) | Self-throttle + scale plan (§10) | ⚪ needs running platform → MVP/Final |
 | — | *Engineering Requirement (not optional): OWASP Top 10 + LLM Top 10 mapping per case* | Evidence Packet `ConfirmedExploit.owasp_mapping` (both lists) + Build-vs-Configure §2 anchors | ✅ designed |

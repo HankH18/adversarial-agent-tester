@@ -1,7 +1,7 @@
 # THREAT_MODEL.md — AgentForge Clinical Co-Pilot
 
 > **Stage 2 deliverable — the attack-surface map AdversaryForge continuously exercises.**
-> System under test: the AgentForge Clinical Co-Pilot (`https://agentforge.hankholcomb.com`), a
+> System under test: the AgentForge Clinical Co-Pilot (deployed at `agentforge.hankholcomb.com` during this project; offline today), a
 > FastAPI agent (`agent/copilot/`) wrapping an OpenEMR FHIR/REST core, multi-agent chat **on in the
 > deploy** (`COPILOT_CHAT_GRAPH_ENABLED=true`). Every target claim below is traceable to
 > `../openemr-base-clean` by `path:line`, or to the target maintainer's own disclosed limitations
@@ -384,6 +384,8 @@ tool-misuse, state-corruption) was refused. The only live successes are the alre
 stays proven by its unit test). This moves the P0 categories from *staged* to **live-confirmed (defense
 held)** — the honest headline being that this target's authenticated surface is well-defended and its real
 exposure is on the anonymous surface.
+
+This sweep ran before the session-cookie fix of 2026-07-24: the cookie was sent without its `af_session=` name, so the target rejected it and the auth-gated attacks hit the 401 boundary instead of the defenses behind it. A re-run with a verified physician session (`reports/DEFENSES_HELD.md`) found the authenticated attacks held. The raw verdicts of neither run are committed; only the five anonymous-surface findings in `evals/published_findings.yaml` are reproducible from this repository.
 
 ## 9. Living document — how the platform exercises this model
 

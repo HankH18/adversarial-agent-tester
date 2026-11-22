@@ -1,7 +1,5 @@
 # Demo Script — AdversaryForge (3–5 min)
 
-> **📹 Recorded demo video:** https://www.loom.com/share/e672a42810b5461e9bf789d4a625255f
->
 > A tight, live walkthrough for the submission video. Every step runs against the **live** deployed
 > target `https://agentforge.hankholcomb.com`. Rehearse once; the whole thing is ~4 minutes.
 > Terminal on the left, `THREAT_MODEL.md` / a `reports/VULN-*.md` open on the right.

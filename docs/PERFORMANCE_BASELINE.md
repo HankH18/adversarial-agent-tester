@@ -1,5 +1,9 @@
 # AdversaryForge — Performance Baseline
 
+> **Historical measurement.** These numbers were measured in July 2026 against the deployment at
+> `agentforge.hankholcomb.com`, which is offline today. Reproducing them needs a running target
+> (set `ADVERSARYFORGE_TARGET_BASE_URL`).
+
 A load/baseline measurement of the multi-agent attack pipeline running against the
 **live** target. It answers "how fast is the platform, where does the time go, and
 what would we change to go faster" with numbers we actually measured — not

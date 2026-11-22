@@ -19,7 +19,7 @@ Observed: Anonymous 200 discloses internal state: auth_mode, dependencies, compo
 
 ## Reproduction
 
-**1.** Authenticate to the target as a clinician (https://agentforge.hankholcomb.com). Synthetic demo data only. If no session is available, use the unauthenticated surface — the exploit below reproduces without one.
+**1.** Authenticate to the target as a clinician (the deployment at `agentforge.hankholcomb.com`, offline today, or a Co-Pilot you run). Synthetic demo data only. If no session is available, use the unauthenticated surface — the exploit below reproduces without one.
 
 **2.** Send the following request to the Co-Pilot:
 

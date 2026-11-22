@@ -1,7 +1,7 @@
 # Adversarial Agent Tester — orientation
 
-> **The project doc is the source of truth.** Read **`docs/Week_3_AgentForge.md`** — a verbatim text
-> extraction of `docs/Week_3_AgentForge.pdf`, provided in markdown because PDFs are not directly
+> **The project doc is the source of truth.** Read **`docs/brief/Week_3_AgentForge.md`** — a verbatim text
+> extraction of `docs/brief/Week_3_AgentForge.pdf`, provided in markdown because PDFs are not directly
 > readable in this environment. It defines the requirements, the hard gates, and the deliverables.
 > **Everything in this file is orientation and defaults — not requirements.** Wherever this file, or
 > any scaffolding in this repo, conflicts with the project doc, **the project doc wins.**
@@ -19,7 +19,7 @@ invariants) over hard-coding one system's routes.
 
 ## The target under test
 
-- **Live deployment — authorized target, the user owns it:** https://agentforge.hankholcomb.com
+- **Deployment (offline today) — authorized target, the user owns it:** `agentforge.hankholcomb.com`
   Per-physician SMART/OAuth sign-in. Synthetic demo data only; never real PHI.
 - **Source repo (read-only reference):** `../openemr-base-clean`, wired in via
   `.claude/settings.json` → `permissions.additionalDirectories`, so it is readable every session with

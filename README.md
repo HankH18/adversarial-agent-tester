@@ -1,21 +1,18 @@
 # AdversaryForge
 
-**A multi-agent adversarial evaluation platform that continuously hunts, evaluates, and documents
-vulnerabilities in AI-assisted clinical chatbots.** Target #1 is the OpenEMR **Clinical Co-Pilot**
-(AgentForge) — a live, authorized, synthetic-data-only deployment.
+**A red-team platform that attacks an AI clinical chatbot, judges each attempt, and writes reproducible vulnerability reports.** The target was the author's own [Clinical Co-Pilot for OpenEMR](https://github.com/HankH18/openemr-base-clean), deployed with synthetic data only (authorized; never real PHI). That deployment ran at `agentforge.hankholcomb.com` and is offline today.
 
 > The goal is not to find one jailbreak. It is a system that can tell — run after run, version after
 > version — whether a *category* of exploit is still open, whether a fix actually held, and whether
 > closing one hole opened another. Built to the standard of *a hospital CISO deciding whether to
 > trust it with continuous testing of systems their physicians depend on.*
 
-- **Deployed target under test:** https://agentforge.hankholcomb.com (authorized — user-owned;
-  synthetic demo data only, never real PHI)
-- **Demo video (3–5 min):** https://www.loom.com/share/e672a42810b5461e9bf789d4a625255f — the platform
-  running live attacks against the deployed target
-- **Architecture:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · **Threat model:**
-  [`THREAT_MODEL.md`](THREAT_MODEL.md) · **Users:** [`USERS.md`](USERS.md)
-- **Build ledger (historical, per-cycle):** [`docs/BUILD_LEDGER.md`](docs/BUILD_LEDGER.md) — for the current test count run `.venv/bin/python -m pytest -q`
+- **Results against the deployment (2026-07-21 to 07-24):** 30 OWASP-mapped attack seeds (10 unauthenticated, 20 authenticated); 5 published findings, all on the anonymous surface: 2 medium denial-of-service and 3 low information-disclosure. Each has a report in [`reports/`](reports/) and a verbatim transcript in [`evals/published_findings.yaml`](evals/published_findings.yaml). A sixth confirmed finding, a low missing-HSTS header, has no report; it and the authenticated attacks that held are recorded in [`reports/DEFENSES_HELD.md`](reports/DEFENSES_HELD.md).
+- **Throughput:** 100 attack executions in 60.0 s; target HTTP p95 1,810 ms; judge overhead p50 0.37 ms ([`docs/PERFORMANCE_BASELINE.md`](docs/PERFORMANCE_BASELINE.md)).
+- **How verdicts are made:** a deterministic rule engine decides first; a Claude judge from a different model family than the attacker is a key-gated fallback. All five published findings were decided by the rule engine.
+- **Run it locally, offline, no keys:** after the Quickstart install, `python -m adversaryforge.cli seed-published` then `python -m adversaryforge.cli report` regenerates the five `VULN-*.md` reports from the committed ledger.
+- **Stack:** Python 3.11, httpx, pydantic v2, JSON Schema contracts, Typer, SQLite, Anthropic SDK, OpenRouter, pytest, GitHub Actions.
+- **Docs:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`docs/AS_BUILT.md`](docs/AS_BUILT.md) (plan vs shipped) · [`THREAT_MODEL.md`](THREAT_MODEL.md) · [`docs/COST_ANALYSIS.md`](docs/COST_ANALYSIS.md) · [`docs/BUILD_LEDGER.md`](docs/BUILD_LEDGER.md) (historical)
 
 ---
 
@@ -65,7 +62,7 @@ uv venv                    # uv provisions a Python that satisfies requires-pyth
 uv pip install -e '.[dev]'
 #    No uv?  python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
-# 2. Configure (both secrets are OPTIONAL — the platform runs without them)
+# 2. Configure (all secrets are OPTIONAL — the platform runs without them)
 cp .env.example .env      # then edit — see "Authentication & keys" below
 
 # 3. START HERE (fully offline, no target, no secrets). The SQLite store is git-ignored and
@@ -75,8 +72,8 @@ cp .env.example .env      # then edit — see "Authentication & keys" below
 .venv/bin/python -m adversaryforge.cli status          # observability snapshot the Orchestrator reads
 .venv/bin/python -m adversaryforge.cli report          # (re)generate reports/*.md from the loaded findings
 
-# 4. LIVE (needs the authorized target; the authenticated plane also needs a session cookie)
-.venv/bin/python -m adversaryforge.cli campaign   # attack the live target
+# 4. LIVE (needs the authorized target, which is offline today; the authenticated plane also needs a session cookie)
+.venv/bin/python -m adversaryforge.cli campaign   # attack the target
 .venv/bin/python -m adversaryforge.cli resume     # resume a crashed/interrupted campaign
 .venv/bin/python -m adversaryforge.cli regress    # re-run the fail-closed regression suite
 ```
@@ -92,7 +89,7 @@ after a clean install — see the note above).
 | `status` | Coverage per category, pass/fail rates, resilience trend, open findings, cost |
 | `seeds` | List the seed library with test-design roles (boundary/invariant/regression) |
 | `seed-published` | Load the committed findings ledger (real exploits behind `reports/`) so a fresh clone regenerates the reports + runs status/regress. See [`docs/REMEDIATION.md`](docs/REMEDIATION.md) |
-| `regress` | Re-run confirmed exploits; exits non-zero unless the fail-closed gate is GREEN. **On the shipped/demo data this is correctly RED** — the live target is still rate-limit-vulnerable, so the gate refuses to go green until the target is fixed. That is the harness working, not a platform failure. |
+| `regress` | Re-run confirmed exploits; exits non-zero unless the fail-closed gate is GREEN. **On the shipped/demo data this is correctly RED** — the target was still rate-limit-vulnerable when last tested (2026-07-24), so the gate refused to go green; with that deployment offline today, the replays come back `errored` (inconclusive), which also keeps it red. That is the harness working, not a platform failure. |
 | `report` | (Re)generate professional vulnerability reports |
 | `trace [run_id]` | Render the fine-grained per-agent execution trace (span tree) for a run |
 
@@ -105,10 +102,11 @@ coverage as secrets are provided.
 
 | Secret (`.env`) | Unlocks | Without it |
 |---|---|---|
-| `AGENTFORGE_SESSION_COOKIE` | The **authenticated** attack plane (prompt injection, PHI exfil, multi-turn) against the deploy | Runs the **unauthenticated** live surface (info disclosure, error-oracle, rate-limit, auth enforcement) |
+| `AGENTFORGE_SESSION_COOKIE` | The **authenticated** attack plane (prompt injection, PHI exfil, multi-turn) against the deployed target (offline today) | Runs the **unauthenticated** surface (info disclosure, error-oracle, rate-limit, auth enforcement) |
 | `ANTHROPIC_API_KEY` | The platform's **in-process** LLM Red Team mutator + LLM-second Judge + Documentation prose | Judge runs **deterministic-only**; LLM roles are driven by orchestrated subagents at build time |
+| `OPENROUTER_API_KEY` | The primary Red Team mutator (Hermes 4 405B, a different model family from the Claude judge) | The mutator falls back to Claude, or to the deterministic keyless transforms with no key at all |
 
-**Getting a session cookie:** sign in as a physician at the deploy, open DevTools → Application →
+**Getting a session cookie:** sign in as a physician on a deployed Co-Pilot (the original deployment is offline today), open DevTools → Application →
 Cookies, and paste the session cookie into `AGENTFORGE_SESSION_COOKIE`. Auth is abstracted behind a
 pluggable `SessionProvider` (anonymous / env-cookie / OAuth-automation stub), so swapping in
 automated SMART/OAuth login later touches no attack code.

@@ -141,7 +141,7 @@ flowchart TB
         DOC["📝 Documentation Agent<br/>(Claude)"]
     end
 
-    TARGET(["🎯 Clinical Co-Pilot<br/>agentforge.hankholcomb.com<br/>(live, authorized)"])
+    TARGET(["🎯 Clinical Co-Pilot<br/>agentforge.hankholcomb.com<br/>(authorized, offline today)"])
 
     OBS -->|"state snapshot"| ORCH
     ORCH -->|"CampaignDirective v1"| RT

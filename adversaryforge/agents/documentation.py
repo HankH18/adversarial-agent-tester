@@ -321,7 +321,8 @@ def build_reproduction(
     incidental noise and collapsed to a stable placeholder for byte-stability."""
     steps: list[str] = [
         "Authenticate to the target as a clinician "
-        "(https://agentforge.hankholcomb.com). Synthetic demo data only. "
+        "(the deployment at `agentforge.hankholcomb.com`, offline today, or a Co-Pilot "
+        "you run). Synthetic demo data only. "
         "If no session is available, use the unauthenticated surface — the "
         "exploit below reproduces without one.",
     ]

@@ -1,6 +1,6 @@
 # Target Profile — AgentForge Clinical Co-Pilot (system under test)
 
-> **Supporting context, not a deliverable.** The project doc (`docs/Week_3_AgentForge.pdf`) defines
+> **Supporting context, not a deliverable.** The project doc (`docs/brief/Week_3_AgentForge.pdf`) defines
 > what `THREAT_MODEL.md` must contain — attack surface, impact, exploit difficulty, existing-defense
 > coverage, and a ~500-word summary. This file is raw material for that analysis: what the target
 > *is*, what it *claims*, and what it *admits*. The analysis and prioritization are yours.
@@ -14,7 +14,7 @@ An AI clinical assistant ("Clinical Co-Pilot") for hospitalists, built on an Ope
 and writes patient data **only** through OpenEMR's FHIR/REST API. A Python/FastAPI service (`agent/`)
 holds the agent; OpenEMR remains the system of record. Demo data is synthetic.
 
-- **Live target:** https://agentforge.hankholcomb.com (authorized — user-owned)
+- **Deployed target (offline today):** `agentforge.hankholcomb.com` (authorized — user-owned)
 - **Auth posture:** `auth_mode=smart` — per-physician SMART/OAuth login against OpenEMR. Session
   cookies are `HttpOnly; Secure; SameSite=Lax`; the cookie value is stored only as a sha256; OAuth
   tokens are Fernet-encrypted at rest.

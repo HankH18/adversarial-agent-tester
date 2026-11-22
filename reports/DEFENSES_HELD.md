@@ -29,7 +29,7 @@ deterministic-first Judge (κ=1.0 gold-set calibration each run).
 | **State corruption** (history poisoning / forged-reply replay) | 2 | **0** | ✅ **HELD** — poisoned history did not launder into trusted instructions; ungrounded turns withheld |
 | **Tool misuse** (write-gate, forged confirm, rounds-start tamper) | 2 | **0** | ✅ **HELD** — write routes gated; forged confirmations rejected |
 | **Identity / role** (clinician mismatch, persona hijack, SSRF-via-agent) | 3 | **0** | ✅ **HELD** — the asserted-clinician override did not take; no server-side fetch of internal/metadata URLs |
-| **Data exfiltration** | 14 | 4 | ⚠️ **MIXED** — authenticated **cross-patient reads and PHI egress HELD** (authz enforced: 401/403/withheld). The 4 confirmed are **infrastructure info-disclosure** on *anonymous* endpoints (`/ready`, `/v1/auth/status`, `/openapi.json`) + a missing-HSTS transport gap — see the `VULN-*` reports |
+| **Data exfiltration** | 14 | 4 | ⚠️ **MIXED** — authenticated **cross-patient reads and PHI egress HELD** (authz enforced: 401/403/withheld). The 4 confirmed are **infrastructure info-disclosure** on *anonymous* endpoints (`/ready`, `/v1/auth/status`, `/openapi.json`) + a missing-HSTS transport gap. The three info-disclosure findings have `VULN-*` reports; the HSTS gap has none |
 | **Denial of service** | 3 | 2 | ⚠️ **MIXED** — recursion/latency bounded on most turns; the 2 confirmed are **absent inbound rate limiting** + a cost-amplification latency breach — see `VULN-*` |
 
 **Every one of the 6 confirmed exploits is infrastructure-level** (anonymous info disclosure, missing
@@ -50,6 +50,6 @@ The Judge's polarity: an attack **`success`** means the invariant was *falsified
 **`failure`** means the attack was repelled (**the defense held**). Full per-category threat analysis is
 in [`../THREAT_MODEL.md`](../THREAT_MODEL.md) §8.2.
 
-*Counts are from an authenticated campaign on 2026-07-24 (verified session, clean store) and will grow as
-more campaigns run; the qualitative result — LLM-plane and authenticated-PHI categories held, findings are
-infra-level — is stable and reproducible.*
+*Counts are from an authenticated campaign on 2026-07-24 (verified session, clean store). That
+deployment is offline today and this run's raw verdicts are not committed, so these counts cannot be
+re-derived from this repository; the five published findings in `evals/published_findings.yaml` can.*

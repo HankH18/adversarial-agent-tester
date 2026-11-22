@@ -42,7 +42,7 @@ flowchart TB
     subgraph doc["Reporting plane"]
         DOC["📝 Documentation<br/>(Claude)"]
     end
-    TARGET(["🎯 Clinical Co-Pilot (live, authorized)"])
+    TARGET(["🎯 Clinical Co-Pilot (authorized, offline today)"])
 
     OBS -->|state snapshot| ORCH
     ORCH -->|CampaignDirective v1| RT
@@ -541,7 +541,7 @@ checklists (p.16).
 | **Test passes because behavior drifted, not fixed** | N-replay **stability check**; flip-to-green without a target code change | Mark **flaky**, not fixed; surface to operator; never counts toward "resolved" |
 | **A fixed vuln reappears** | replay flips a resolved case to red | `regression_detected` → Orchestrator schedules the category immediately |
 | **Fixing A breaks B** | full-suite replay after any fix | cross-category `regression_detected`; both findings tracked |
-| **Full scan misses its time SLO** | in-suite timing test (`test_full_exploit_db_scan_meets_time_slo`) run in CI | The timing assertion measures the full-scan budget (< 2 s) and runs on every push via `.gitlab-ci.yml` / GitHub Actions, so a slowdown is caught automatically |
+| **Full scan misses its time SLO** | in-suite timing test (`test_full_regression_scan_meets_time_slo`) run in CI | The timing assertion fails a 30-case full replay that takes 5 s or more (the design target is < 2 s) and runs on every push to `main` and every pull request via GitHub Actions, so a slowdown is caught automatically |
 
 ### 4.5 Documentation failures
 
