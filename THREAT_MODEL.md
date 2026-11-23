@@ -374,18 +374,42 @@ the API/chat surface), so it is marked **N/A** rather than fabricated.
 
 ## 8.2 Authenticated-plane evidence (live)
 
-The authenticated attack plane was exercised end-to-end against the authorized target (physician session,
-synthetic data only). **All 6 categories — the full authenticated-runnable set — ran live, and the
-authenticated defenses held:** every auth-gated attack (cross-patient PHI, prompt-injection → exfil,
-tool-misuse, state-corruption) was refused. The only live successes are the already-known
-*unauthenticated-surface* weaknesses that fire regardless of login (info disclosure on
-`/v1/ready` · `/v1/auth/status` · `/openapi`; DoS via absent rate limit and multi-turn amplification).
-**Zero criticals** — so the human-approval gate correctly did not fire (nothing critical to gate; the gate
-stays proven by its unit test). This moves the P0 categories from *staged* to **live-confirmed (defense
-held)** — the honest headline being that this target's authenticated surface is well-defended and its real
-exposure is on the anonymous surface.
+The evidence for this section is the **verified-authenticated campaign of 2026-07-24**
+(`run_7266ae07b82a`, physician session, synthetic data only). Its per-attempt verdicts are committed in
+[`evals/authenticated_run_2026-07-24.yaml`](evals/authenticated_run_2026-07-24.yaml) and summarized in
+[`reports/DEFENSES_HELD.md`](reports/DEFENSES_HELD.md). It ran 28 attempts, one per runnable seed: 18 from
+authenticated seeds and 10 from unauthenticated ones. The library's other two seeds
+(`tm-write-gate-direct`, `tm-forged-confirm`) are write probes, which campaigns skip unless the operator
+opts in, so they did not run. Every verdict came from the deterministic rule engine. An outcome of
+`failure` means the defense held.
 
-This sweep ran before the session-cookie fix of 2026-07-24: the cookie was sent without its `af_session=` name, so the target rejected it and the auth-gated attacks hit the 401 boundary instead of the defenses behind it. A re-run with a verified physician session (`reports/DEFENSES_HELD.md`) found the authenticated attacks held. The raw verdicts of neither run are committed; only the five anonymous-surface findings in `evals/published_findings.yaml` are reproducible from this repository.
+| Category | Attempts | Succeeded | Outcome (2026-07-24) |
+|---|:---:|:---:|---|
+| Prompt injection (direct, indirect via document, multi-turn, embedding cross-context) | 4 | 0 | **Held** |
+| State corruption (history poisoning, assistant-reply replay) | 2 | 0 | **Held** |
+| Tool misuse (rounds-start parameter tamper, SSRF via injection) | 2 | 0 | **Held** |
+| Identity / role (clinician mismatch, persona hijack, anonymous `/v1/auth/me`) | 3 | 0 | **Held** |
+| Data exfiltration | 14 | 4 | **Mixed.** All 6 authenticated attempts held (cross-patient read, PHI egress, existence and error oracles, supply-chain disclosure, ungrounded fabrication), as did 4 anonymous ones (3 authorization-bypass attempts, `/status` component inventory). The 4 successes are anonymous and low: info disclosure on `/ready`, `/v1/auth/status` and `/openapi.json`, and a missing HSTS header |
+| Denial of service | 3 | 2 | **Mixed.** Token exhaustion held. Both successes are medium: absent inbound rate limiting (anonymous burst on `/health`) and multi-turn cost amplification (authenticated chat) |
+
+**What the run supports.** Under a genuine session, 17 of the 18 authenticated attempts held, including
+every prompt-injection, state-corruption, tool-misuse, identity and data-exfiltration attempt. The
+exception is multi-turn cost amplification, a medium denial-of-service finding on the authenticated chat
+route. The other five successes are on the anonymous surface. So the headline holds with one
+qualification: the authenticated injection, authorization and PHI defenses held, and the real exposure is
+the anonymous surface plus one authenticated cost-amplification weakness. This moves the auth-gated
+categories (cross-patient PHI, prompt injection, tool misuse, state corruption) from *staged* to
+**live-confirmed (defense held)**; the write gate itself (INV-WRITE-GATED) was not probed, because both of
+its seeds are write probes. **No verdict was critical** (the highest was medium), so the human-approval
+gate had nothing to gate; it stays proven by its unit test. A regression replay about two minutes later
+(`run_d8d0e6ec914c`, in the same file) re-ran the 6 confirmed exploits, and all 6 reproduced.
+
+**The 2026-07-23 sweep does not count.** An earlier version of this section rested on a sweep recorded on
+2026-07-23, which reported all six categories run live and the authenticated defenses held. That sweep ran
+before the session-cookie fix of 2026-07-24 (`adversaryforge/target/session.py`): the cookie was sent
+without its `af_session=` name, so the target rejected it and the auth-gated attacks stopped at the 401
+boundary instead of reaching the defenses behind it. Its refusals were pre-auth rejections, not held
+defenses, so it is not evidence about the authenticated plane, and none of its verdicts are counted here.
 
 ## 9. Living document — how the platform exercises this model
 

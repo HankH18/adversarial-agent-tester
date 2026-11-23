@@ -50,6 +50,8 @@ The Judge's polarity: an attack **`success`** means the invariant was *falsified
 **`failure`** means the attack was repelled (**the defense held**). Full per-category threat analysis is
 in [`../THREAT_MODEL.md`](../THREAT_MODEL.md) §8.2.
 
-*Counts are from an authenticated campaign on 2026-07-24 (verified session, clean store). That
-deployment is offline today and this run's raw verdicts are not committed, so these counts cannot be
-re-derived from this repository; the five published findings in `evals/published_findings.yaml` can.*
+*Counts are from the authenticated campaign of 2026-07-24 (`run_7266ae07b82a`; verified session, clean
+store). That deployment is offline today, but the run's per-attempt verdicts are committed in
+[`../evals/authenticated_run_2026-07-24.yaml`](../evals/authenticated_run_2026-07-24.yaml) (payloads and
+target responses redacted), so these counts can be re-derived from this repository, as can the five
+published findings in `evals/published_findings.yaml`.*
